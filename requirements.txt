@@ -1,0 +1,7 @@
+torch
+flask
+openai-whisper
+moviepy
+fpdf
+gunicorn
+imageio_ffmpeg

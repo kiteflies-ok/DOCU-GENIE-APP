@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docu-Genie | AI Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        /* --- CORE VISUALS --- */
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #000;
+            color: white;
+            overflow: hidden;
+            /* No scrollbars for the vibe */
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 1000px;
+            /* Essential for 3D effect */
+        }
+
+        /* --- LIQUID BACKGROUND --- */
+        .ambient-light {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100vw;
+            height: 100vh;
+            background:
+                radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.4), transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(236, 72, 153, 0.25), transparent 50%),
+                radial-gradient(circle at 50% 80%, rgba(6, 182, 212, 0.3), transparent 50%);
+            filter: blur(60px);
+            z-index: -2;
+            animation: pulse-light 10s ease-in-out infinite alternate;
+        }
+
+        .floating-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.6;
+            z-index: -1;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .orb-1 {
+            width: 600px;
+            height: 600px;
+            background: #7c3aed;
+            top: -10%;
+            left: -10%;
+            animation-delay: 0s;
+        }
+
+        .orb-2 {
+            width: 500px;
+            height: 500px;
+            background: #06b6d4;
+            bottom: -10%;
+            right: -10%;
+            animation-delay: -5s;
+        }
+
+        .orb-3 {
+            width: 300px;
+            height: 300px;
+            background: #ec4899;
+            top: 40%;
+            left: 40%;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -50px) scale(1.1);
+            }
+
+            66% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
+        }
+
+        @keyframes pulse-light {
+            0% {
+                opacity: 0.8;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+        }
+
+        /* --- THE GLASS CARD (Tilt Target) --- */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transform-style: preserve-3d;
+            /* Makes children pop out */
+            transition: transform 0.1s ease-out;
+            /* Smooth movement */
+        }
+
+        /* --- UPLOAD ZONE --- */
+        .upload-zone {
+            background: repeating-linear-gradient(45deg,
+                    rgba(255, 255, 255, 0.03),
+                    rgba(255, 255, 255, 0.03) 10px,
+                    rgba(255, 255, 255, 0.05) 10px,
+                    rgba(255, 255, 255, 0.05) 20px);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .upload-zone:hover {
+            border-color: #22d3ee;
+            box-shadow: 0 0 30px rgba(34, 211, 238, 0.15);
+            transform: translateY(-2px) translateZ(20px);
+            /* Pops out in 3D */
+        }
+
+        /* --- NEON BUTTON --- */
+        .btn-neon {
+            background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+        }
+
+        .btn-neon:hover {
+            transform: scale(1.02) translateZ(10px);
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.5);
+        }
+
+        .btn-neon:active {
+            transform: scale(0.98);
+        }
+
+        /* --- LOADER --- */
+        .loader-ring {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #22d3ee;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="ambient-light"></div>
+    <div class="floating-orb orb-1"></div>
+    <div class="floating-orb orb-2"></div>
+    <div class="floating-orb orb-3"></div>
+
+    <div class="relative w-full max-w-xl p-6 perspective-container">
+
+        <div id="tilt-card" class="glass-panel rounded-3xl p-8 md:p-12 text-center relative overflow-hidden">
+
+            <div class="relative z-10 mb-10 transform transition-transform duration-500 hover:scale-105"
+                style="transform: translateZ(30px);">
+                <div
+                    class="inline-block px-3 py-1 mb-4 rounded-full bg-white/5 border border-white/10 text-xs tracking-widest text-cyan-300 uppercase">
+                    AI Powered v2.0
+                </div>
+                <h1
+                    class="text-5xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-white">
+                    Docu-Genie
+                </h1>
+                <p class="mt-2 text-white/50 font-light text-lg">
+                    Turn chaos into clarity.
+                </p>
+            </div>
+
+            <form id="uploadForm" class="relative z-20" style="transform: translateZ(40px);">
+                <div id="drop-zone" class="upload-zone rounded-2xl p-10 cursor-pointer group">
+                    <input type="file" id="video-input" name="video" class="hidden" accept="video/*" required>
+
+                    <div id="upload-prompt">
+                        <div
+                            class="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-cyan-500/20 transition-colors">
+                            <svg class="w-8 h-8 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                                </path>
+                            </svg>
+                        </div>
+                        <p class="text-lg font-medium text-white">Drop video here</p>
+                        <p class="text-sm text-white/40 mt-1">or click to browse</p>
+                    </div>
+
+                    <div id="file-selected" class="hidden">
+                        <div
+                            class="w-12 h-12 mx-auto mb-3 rounded-full bg-green-500/20 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <p id="filename" class="text-white font-medium truncate max-w-[200px] mx-auto"></p>
+                    </div>
+                </div>
+
+                <button type="submit" id="submit-btn"
+                    class="mt-8 w-full btn-neon py-4 rounded-xl text-white font-bold text-lg tracking-wide uppercase">
+                    Generate Magic
+                </button>
+            </form>
+
+            <div id="loading" class="hidden py-10">
+                <div class="loader-ring mx-auto mb-4"></div>
+                <p class="text-cyan-300 animate-pulse">Analyzing pixels...</p>
+            </div>
+
+            <div id="success" class="hidden py-6">
+                <div class="text-5xl mb-4">✨</div>
+                <h3 class="text-2xl font-bold text-white mb-2">Ready!</h3>
+                <p class="text-white/50 mb-6">Your guide has been crafted.</p>
+                <a id="download-link" href="#"
+                    class="block w-full bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition-colors">
+                    Download PDF
+                </a>
+            </div>
+
+            <div id="error" class="hidden mt-4 p-3 bg-red-500/20 rounded-lg border border-red-500/50">
+                <p id="error-msg" class="text-red-200 text-sm"></p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 3D TILT EFFECT LOGIC ---
+        const card = document.getElementById('tilt-card');
+        const container = document.querySelector('.perspective-container');
+
+        document.addEventListener('mousemove', (e) => {
+            const xAxis = (window.innerWidth / 2 - e.pageX) / 25;
+            const yAxis = (window.innerHeight / 2 - e.pageY) / 25;
+            card.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
+        });
+
+        // Reset when mouse leaves
+        document.addEventListener('mouseleave', () => {
+            card.style.transform = `rotateY(0deg) rotateX(0deg)`;
+        });
+
+        // --- APP LOGIC ---
+        const dropZone = document.getElementById('drop-zone');
+        const videoInput = document.getElementById('video-input');
+        const uploadPrompt = document.getElementById('upload-prompt');
+        const fileSelected = document.getElementById('file-selected');
+        const filename = document.getElementById('filename');
+        const form = document.getElementById('uploadForm');
+        const loading = document.getElementById('loading');
+        const success = document.getElementById('success');
+        const downloadLink = document.getElementById('download-link');
+        const errorDiv = document.getElementById('error');
+        const errorMsg = document.getElementById('error-msg');
+
+        // Click to upload
+        dropZone.addEventListener('click', () => videoInput.click());
+
+        // Handle File Select
+        videoInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                showFile(e.target.files[0].name);
+            }
+        });
+
+        // Drag and Drop Visuals
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#22d3ee';
+            dropZone.style.background = 'rgba(34, 211, 238, 0.1)';
+        });
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '';
+            dropZone.style.background = '';
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '';
+            dropZone.style.background = '';
+            if (e.dataTransfer.files.length > 0) {
+                videoInput.files = e.dataTransfer.files;
+                showFile(e.dataTransfer.files[0].name);
+            }
+        });
+
+        function showFile(name) {
+            uploadPrompt.classList.add('hidden');
+            fileSelected.classList.remove('hidden');
+            filename.textContent = name;
+        }
+
+        // Form Submit
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!videoInput.files.length) return;
+
+            // UI Transition
+            form.classList.add('hidden');
+            loading.classList.remove('hidden');
+            errorDiv.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('video', videoInput.files[0]);
+
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+                loading.classList.add('hidden');
+                success.classList.remove('hidden');
+                downloadLink.href = data.download_url;
+                downloadLink.download = '';
+
+                // Add a little confetti effect (simple version)
+                card.style.transform = "scale(1.05)";
+                setTimeout(() => card.style.transform = "scale(1)", 200);
+
+            } catch (err) {
+                console.error(err);
+                loading.classList.add('hidden');
+                form.classList.remove('hidden');
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = err.message;
+            }
+        });
+    </script>
+</body>
+
+</html>
