@@ -281,7 +281,7 @@ def answer_question(question, context):
     Uses Mistral-7B for accurate, context-grounded responses.
     """
     try:
-        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
+        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.2")
         
         prompt = f"""You are a helpful assistant that answers questions about Standard Operating Procedures.
 Answer the following question using ONLY the information provided in the context below.
