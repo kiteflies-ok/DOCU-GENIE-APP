@@ -110,22 +110,22 @@
 
             <form id="uploadForm" class="space-y-6">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <!-- Style Selector -->
                     <div>
                         <label class="block text-xs uppercase text-white/40 mb-2 tracking-wider">Tone & Style</label>
                         <select name="style" id="style-select"
                             class="glass-select w-full px-4 py-3 rounded-xl focus:outline-none focus:border-indigo-500">
-                            <option value="Professional (Corporate)">👔 Professional (Corporate)</option>
-                            <option value="Viral/Hype (High Energy)">🔥 Viral/Hype (High Energy)</option>
-                            <option value="Educational (Academic)">🎓 Educational (Academic)</option>
-                            <option value="Witty (Fun/Casual)">😉 Witty (Fun/Casual)</option>
+                            <option value="Professional (Corporate)">👔 Professional</option>
+                            <option value="Viral/Hype (High Energy)">🔥 Viral/Hype</option>
+                            <option value="Educational (Academic)">🎓 Educational</option>
+                            <option value="Witty (Fun/Casual)">😉 Witty</option>
                         </select>
                     </div>
 
                     <!-- Language Selector -->
                     <div>
-                        <label class="block text-xs uppercase text-white/40 mb-2 tracking-wider">Output Language</label>
+                        <label class="block text-xs uppercase text-white/40 mb-2 tracking-wider">Language</label>
                         <select name="language" id="language-select"
                             class="glass-select w-full px-4 py-3 rounded-xl focus:outline-none focus:border-indigo-500">
                             <option value="English">🇬🇧 English</option>
@@ -135,6 +135,20 @@
                             <option value="German">🇩🇪 German</option>
                             <option value="Japanese">🇯🇵 Japanese</option>
                             <option value="Chinese">🇨🇳 Chinese</option>
+                        </select>
+                    </div>
+
+                    <!-- Visual Cues Selector -->
+                    <div>
+                        <label class="block text-xs uppercase text-white/40 mb-2 tracking-wider">Visual Cues</label>
+                        <select name="screenshot_count" id="screenshot-select"
+                            class="glass-select w-full px-4 py-3 rounded-xl focus:outline-none focus:border-indigo-500">
+                            <option value="3" selected>📸 3 Frames</option>
+                            <option value="2">2 Frames</option>
+                            <option value="5">5 Frames</option>
+                            <option value="7">7 Frames</option>
+                            <option value="9">9 Frames</option>
+                            <option value="11">11 Frames</option>
                         </select>
                     </div>
                 </div>

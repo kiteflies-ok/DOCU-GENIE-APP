@@ -128,7 +128,7 @@ FONT_PATH = download_font()
 # ============================================
 # CONTENT REPURPOSING AGENT
 # ============================================
-def generate_content_pack(raw_text, video_duration=0, target_language='English', style='Professional'):
+def generate_content_pack(raw_text, video_duration=0, target_language='English', style='Professional', cues=[]):
     """
     Generates a 3-section content pack: Summary, Script, Socials.
     """
@@ -139,10 +139,8 @@ def generate_content_pack(raw_text, video_duration=0, target_language='English',
     # Time cues
     duration_info = ""
     if video_duration > 0:
-        t1 = int(video_duration * 0.10)
-        t2 = int(video_duration * 0.50)
-        t3 = int(video_duration * 0.90)
-        duration_info = f"Video Length: {int(video_duration)}s. Cues: {t1}s, {t2}s, {t3}s."
+        cues_str = ", ".join([f"{int(c)}s" for c in cues]) if cues else "None"
+        duration_info = f"Video Length: {int(video_duration)}s. Cues available at: {cues_str}."
 
     prompt = f"""Act as a Lead Content Producer. 
 You are a professional translator and content strategist. 
@@ -251,6 +249,7 @@ def upload_file():
     file = request.files['video']
     target_language = request.form.get('language', 'English')
     style = request.form.get('style', 'Professional (Corporate)')
+    screenshot_count = int(request.form.get('screenshot_count', 3))
     
     job_id = str(uuid.uuid4())
     filename = secure_filename(file.filename)
@@ -279,22 +278,34 @@ def upload_file():
         result = model.transcribe(audio_path, fp16=False)
         raw_text = result['text']
         
-        # 2. Extract Screenshots (for Script section)
+        # 2. Extract Screenshots (Dynamic Count)
         screenshots = []
-        for i, pct in enumerate([0.1, 0.5, 0.9]):
+        cues = []
+        # Generate N screenshots. Handle count=1 separately.
+        if screenshot_count <= 1:
+            fractions = [0.5]
+        else:
+            # Linear spacing between 0.1 and 0.9
+            start_pct = 0.1
+            end_pct = 0.9
+            fractions = [start_pct + i * (end_pct - start_pct) / (screenshot_count - 1) for i in range(screenshot_count)]
+            
+        for i, pct in enumerate(fractions):
             ts = video_duration * pct
             out_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{i}.jpg")
             try:
                 clip.save_frame(out_path, t=ts)
                 screenshots.append(out_path)
+                cues.append(ts)
                 temp_files.append(out_path)
-            except: pass
+            except Exception as e:
+                print(f"Frame extraction failed at {ts}s: {e}")
             
         clip.close()
 
         # 3. Generate Content
         print("Step 2: AI Generation...", flush=True)
-        generated_text = generate_content_pack(raw_text, video_duration, target_language, style)
+        generated_text = generate_content_pack(raw_text, video_duration, target_language, style, cues)
         
         # 4. Audit
         audit = auditor.run_audit(generated_text)
@@ -336,10 +347,46 @@ def upload_file():
         # PAGE 2: Video Script
         pdf.add_page()
         pdf.chapter_title("Video Script")
-        # Add visual context if available
-        if screenshots:
-            pdf.image(screenshots[0], x=150, y=10, w=40)
+        # Note: Screenshots moved to dedicated Storyboard page
         pdf.chapter_body(sections['SECTION 2'])
+        
+        # PAGE 2b: Visual Storyboard
+        if screenshots:
+            pdf.add_page()
+            pdf.chapter_title("Visual Storyboard")
+            
+            # Grid Layout (3 columns)
+            x_start = 10
+            y_start = 30
+            img_w = 60 
+            img_h = 33 # 16:9 aspect
+            
+            col = 0
+            row = 0
+            
+            for shot in screenshots:
+                if row > 4: # New page if too many rows
+                    pdf.add_page()
+                    pdf.chapter_title("Visual Storyboard (Cont.)")
+                    row = 0
+                    
+                x = x_start + (col * (img_w + 5))
+                y = y_start + (row * (img_h + 10))
+                
+                try:
+                    pdf.image(shot, x=x, y=y, w=img_w, h=img_h)
+                    # Add timestamp label?
+                    # pdf.set_xy(x, y + img_h + 1)
+                    # pdf.set_font('Arial', '', 8)
+                    # pdf.cell(img_w, 5, f"Cue {row*3 + col + 1}", 0, 0, 'C')
+                except Exception as e:
+                    print(f"Error PDF image: {e}")
+                    
+                col += 1
+                if col >= 3:
+                    col = 0
+                    row += 1
+
         
         # PAGE 3: Social Media
         pdf.add_page()

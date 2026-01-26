@@ -31,7 +31,7 @@ Upload any video tutorial, training session, or walkthrough — and Docu-Genie w
 | � **Auto Screenshots** | Captures key frames from your video |
 | 📄 **Professional PDF** | Cover page, headers, footers, styled sections |
 | ⚡ **Fast Processing** | Optimized for CPU deployment |
-| 🎨 **Beautiful UI** | Glassmorphism design with 3D tilt effects |
+
 
 ## 🛠️ Tech Stack
 
