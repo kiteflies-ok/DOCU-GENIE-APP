@@ -1,3 +1,12 @@
+---
+title: Docu-Genie
+emoji: 🧞
+colorFrom: purple
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # 🧞 Docu-Genie
 
 Transform videos into PDF documentation using AI transcription.
