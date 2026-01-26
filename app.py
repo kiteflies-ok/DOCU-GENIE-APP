@@ -2,6 +2,7 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 import os
+import re
 import sqlite3
 import uuid
 import datetime
@@ -11,6 +12,76 @@ from moviepy import VideoFileClip
 import whisper
 from fpdf import FPDF
 from huggingface_hub import InferenceClient
+
+
+# ============================================
+# AUDITOR SKILL: Safety & Structure Validator
+# ============================================
+class AuditorSkill:
+    """
+    Enterprise-grade auditor that validates SOP documents for:
+    1. Safety compliance - checks for dangerous/bypass language
+    2. Structure compliance - ensures proper step formatting
+    3. Quality standards - validates professional formatting
+    """
+    
+    def __init__(self):
+        self.dangerous_terms = [
+            'ignore warning', 
+            'bypass safety', 
+            'force', 
+            "don't worry",
+            'skip verification',
+            'override',
+            'disable protection',
+            'turn off safety',
+            'ignore error'
+        ]
+        
+        self.required_sections = [
+            'step 1', '1.', 'step-1'
+        ]
+    
+    def run_audit(self, text):
+        """
+        Run comprehensive audit on SOP document.
+        Returns dict with status ('PASS' or 'FAIL') and reason.
+        """
+        text_lower = text.lower()
+        
+        # 1. Safety Check - Look for dangerous terms
+        for term in self.dangerous_terms:
+            if term in text_lower:
+                return {
+                    'status': 'FAIL', 
+                    'reason': f'Safety violation detected: "{term}"',
+                    'severity': 'HIGH'
+                }
+        
+        # 2. Structure Check - Ensure numbered steps exist
+        has_steps = any(marker in text_lower for marker in self.required_sections)
+        if not has_steps:
+            return {
+                'status': 'FAIL', 
+                'reason': 'Missing numbered steps (Step 1, 1., etc.)',
+                'severity': 'MEDIUM'
+            }
+        
+        # 3. Length Check - Ensure substantial content
+        if len(text) < 100:
+            return {
+                'status': 'FAIL',
+                'reason': 'Content too brief for professional SOP',
+                'severity': 'LOW'
+            }
+        
+        # 4. All checks passed
+        return {
+            'status': 'PASS', 
+            'reason': 'All compliance checks passed',
+            'severity': 'NONE'
+        }
+
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -73,15 +144,15 @@ except Exception as e:
 
 
 # ============================================
-# AI HUMANIZER: Polish transcript with Mistral
+# AI WRITER: One-Shot Learning SOP Generator
 # ============================================
 def humanize_transcript(raw_text, video_duration=0):
     """
-    Use Mistral-7B to rewrite raw transcript into professional SOP format.
+    Enterprise Writer Agent: Uses One-Shot Learning to generate professional SOPs.
     Falls back to raw_text if API fails.
     """
     try:
-        print("Step 2b: Humanizing transcript with AI...", flush=True)
+        print("Step 2b: Writer Agent generating SOP...", flush=True)
         
         # Initialize client (uses HF_TOKEN from environment)
         client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
@@ -92,53 +163,64 @@ def humanize_transcript(raw_text, video_duration=0):
             t1 = int(video_duration * 0.10)
             t2 = int(video_duration * 0.50)
             t3 = int(video_duration * 0.90)
-            duration_info = f"Video Duration: {int(video_duration)} seconds. Key timestamps: {t1}s (10%), {t2}s (50%), {t3}s (90%)."
+            duration_info = f"\n\nVideo Duration: {int(video_duration)} seconds. Reference timestamps: {t1}s, {t2}s, {t3}s."
         
         # Generate SOP ID based on current date
         sop_id = datetime.datetime.now().strftime("SOP-%Y-%m%d-V1")
+        current_date = datetime.datetime.now().strftime("%B %d, %Y")
         
-        prompt = f"""Role: You are an expert Industrial Engineer and Technical Writer specializing in Standard Operating Procedures (SOPs).
+        # ONE-SHOT LEARNING PROMPT
+        prompt = f"""You are an expert Technical Writer specializing in Standard Operating Procedures (SOPs).
 
-Task: Analyze the provided transcript and generate a formal, high-stakes SOP document.
+Rewrite the following transcript into a professional SOP following this EXACT format:
 
-Guidelines:
-1. Zero Hallucination: Treat all content professionally. If the content describes any visual simulation or demonstration, document it as a "Visual Process Demonstration" or "Animated Sequence".
-2. Professional Tone: Use industry-standard terminology (e.g., "visual artifacts," "sequence of operations," "deployment protocols"). Avoid informal language.
-3. Structure: Follow this strict hierarchy:
-
-**DOCUMENT TITLE & METADATA**
-- SOP-ID: {sop_id}
-- Generated: {datetime.datetime.now().strftime("%B %d, %Y")}
+### EXAMPLE OUTPUT:
+---
+**DOCUMENT METADATA**
+- SOP-ID: SOP-2026-0101-V1
+- Date: January 01, 2026
 - Classification: Standard Operating Procedure
 
-**EXECUTIVE SUMMARY**
-A high-level overview of the process (2-3 sentences).
+**TITLE:** How to Reset the Network Router
 
-**SCOPE & APPLICABILITY**
-Who should use this SOP and when.
+**OBJECTIVE:** Safely reset network equipment to restore connectivity.
 
-**STEP-BY-STEP PROCEDURE**
-Use numbered steps with imperative verbs (e.g., "Navigate to...", "Click...", "Verify...").
-Reference approximate timestamps where applicable.
+**SCOPE:** This procedure applies to all IT support personnel handling network equipment maintenance.
 
-**QUALITY & COMPLIANCE NOTES**
-Any safety, quality, or best practice recommendations.
+**PROCEDURE:**
 
-4. Language: Output clear, professional English only.
-5. Formatting: Remove all filler words (um, ah, like, you know). Use precise, action-oriented language.
+Step 1: Locate the small black reset button on the back panel of the router.
 
+Step 2: Using a paperclip or pin, press and hold the button for 10 seconds.
+
+Step 3: Wait until the LED indicator flashes amber, indicating reset initiation.
+
+Step 4: Release the button and wait 60 seconds for the device to reboot.
+
+Step 5: Verify connectivity by checking the status lights (green = operational).
+
+**COMPLIANCE NOTES:**
+- Always document the reset in the maintenance log.
+- If issues persist after reset, escalate to Level 2 support.
+---
+
+### YOUR TASK:
+Using the EXACT format above, rewrite this transcript into a professional SOP:
+
+SOP-ID to use: {sop_id}
+Date: {current_date}
 {duration_info}
 
-Raw Transcript to Process:
+TRANSCRIPT:
 {raw_text}
 
-Professional SOP Document:"""
+PROFESSIONAL SOP:"""
 
         # Call the model with increased tokens for detailed output
         response = client.text_generation(
             prompt,
             max_new_tokens=2048,
-            temperature=0.6,
+            temperature=0.5,
             do_sample=True,
         )
         
@@ -146,14 +228,14 @@ Professional SOP Document:"""
         
         # Validate we got a reasonable response
         if len(polished_text) > 100:
-            print("✓ AI humanization successful!", flush=True)
+            print("✓ Writer Agent completed successfully!", flush=True)
             return polished_text
         else:
             print("⚠ AI response too short, using raw text", flush=True)
             return raw_text
             
     except Exception as e:
-        print(f"⚠ AI humanization failed: {e}", flush=True)
+        print(f"⚠ Writer Agent failed: {e}", flush=True)
         print("→ Falling back to raw transcript", flush=True)
         return raw_text
 
@@ -191,6 +273,11 @@ def extract_frame(video_path, seconds, output_path):
 # ============================================
 class PDF(FPDF):
     
+    def __init__(self):
+        super().__init__()
+        self.audit_status = 'PASS'
+        self.audit_reason = ''
+    
     def header(self):
         """Add header to every page (except cover page)."""
         if self.page_no() > 1:  # Skip header on cover page
@@ -208,12 +295,15 @@ class PDF(FPDF):
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
     
-    def create_cover_page(self, title):
-        """Create a professional cover page."""
+    def create_cover_page(self, title, audit_status='PASS', audit_reason=''):
+        """Create a professional cover page with audit status."""
         self.add_page()
         
-        # Background accent line
-        self.set_fill_color(79, 70, 229)  # Indigo color
+        # Background accent line - color based on audit status
+        if audit_status == 'PASS':
+            self.set_fill_color(34, 197, 94)  # Green
+        else:
+            self.set_fill_color(239, 68, 68)  # Red
         self.rect(0, 100, 210, 5, 'F')
         
         # Title
@@ -228,8 +318,33 @@ class PDF(FPDF):
         self.set_text_color(100, 100, 100)
         self.cell(0, 10, 'Standard Operating Procedure', 0, 1, 'C')
         
+        # Audit Status Badge
+        self.ln(15)
+        if audit_status == 'PASS':
+            self.set_fill_color(220, 252, 231)  # Light green bg
+            self.set_text_color(22, 163, 74)  # Green text
+            status_text = 'AUDIT STATUS: APPROVED'
+        else:
+            self.set_fill_color(254, 226, 226)  # Light red bg
+            self.set_text_color(220, 38, 38)  # Red text
+            status_text = 'AUDIT STATUS: DRAFT REJECTED'
+        
+        self.set_font('Arial', 'B', 12)
+        # Center the badge
+        badge_width = self.get_string_width(status_text) + 20
+        x_pos = (210 - badge_width) / 2
+        self.set_x(x_pos)
+        self.cell(badge_width, 12, status_text, 0, 1, 'C', True)
+        
+        # Audit reason if failed
+        if audit_status != 'PASS' and audit_reason:
+            self.ln(5)
+            self.set_font('Arial', 'I', 10)
+            self.set_text_color(220, 38, 38)
+            self.multi_cell(0, 6, f'Reason: {audit_reason}', 0, 'C')
+        
         # Date
-        self.ln(20)
+        self.ln(15)
         self.set_font('Arial', '', 12)
         self.set_text_color(80, 80, 80)
         today = datetime.datetime.now().strftime('%B %d, %Y')
@@ -239,7 +354,7 @@ class PDF(FPDF):
         self.set_y(-50)
         self.set_font('Arial', 'I', 10)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, 'Powered by Docu-Genie AI', 0, 1, 'C')
+        self.cell(0, 10, 'Powered by Docu-Genie Enterprise AI', 0, 1, 'C')
     
     def add_section_header(self, title):
         """Add a styled section header."""
@@ -249,6 +364,16 @@ class PDF(FPDF):
         self.cell(0, 10, title, 0, 1, 'L')
         self.set_draw_color(79, 70, 229)
         self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(5)
+    
+    def add_warning_banner(self, message):
+        """Add a prominent warning banner."""
+        self.ln(5)
+        self.set_fill_color(254, 243, 199)  # Amber background
+        self.set_text_color(180, 83, 9)  # Amber text
+        self.set_font('Arial', 'B', 11)
+        self.multi_cell(0, 8, f'WARNING: {message}', 0, 'L', True)
+        self.set_text_color(50, 50, 50)
         self.ln(5)
     
     def add_transcript(self, text):
@@ -309,6 +434,9 @@ def upload_file():
         # Track temporary files for cleanup
         temp_files = []
         
+        # Initialize Auditor
+        auditor = AuditorSkill()
+        
         try:
             # =====================
             # STEP 1: Extract Audio
@@ -333,9 +461,31 @@ def upload_file():
             raw_text = result['text']
             
             # =====================
-            # STEP 2b: Humanize with AI
+            # STEP 2b: Writer Agent generates SOP
             # =====================
-            polished_text = humanize_transcript(raw_text, video_duration)
+            draft_sop = humanize_transcript(raw_text, video_duration)
+            
+            # =====================
+            # STEP 2c: Auditor validates SOP
+            # =====================
+            print("Step 2c: Auditor Agent validating SOP...", flush=True)
+            audit_result = auditor.run_audit(draft_sop)
+            print(f"→ Audit Result: {audit_result['status']} - {audit_result['reason']}", flush=True)
+            
+            # Prepare final content based on audit
+            if audit_result['status'] == 'PASS':
+                final_sop = draft_sop
+                audit_status = 'PASS'
+                audit_reason = audit_result['reason']
+            else:
+                # Add warning header to rejected draft
+                final_sop = f"⚠️ DRAFT REJECTED: {audit_result['reason']}\n\n" + \
+                           "=" * 50 + "\n" + \
+                           "UNVALIDATED DRAFT (Review Required)\n" + \
+                           "=" * 50 + "\n\n" + \
+                           draft_sop
+                audit_status = 'FAIL'
+                audit_reason = audit_result['reason']
             
             # =====================
             # STEP 3: Extract Screenshots
@@ -367,11 +517,15 @@ def upload_file():
             # Title from filename (clean it up)
             doc_title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
             
-            # Cover page
-            pdf.create_cover_page(doc_title)
+            # Cover page with audit status
+            pdf.create_cover_page(doc_title, audit_status, audit_reason)
             
             # Content page
             pdf.add_page()
+            
+            # Add warning banner if audit failed
+            if audit_status != 'PASS':
+                pdf.add_warning_banner(f"This document failed automated compliance checks: {audit_reason}")
             
             # Screenshots section
             if screenshot_paths:
@@ -382,9 +536,9 @@ def upload_file():
                     caption = f"Screenshot at {minutes}:{seconds:02d}"
                     pdf.add_screenshot(img_path, caption)
             
-            # Transcript section (using polished AI text)
+            # Transcript section (using validated or warned content)
             pdf.add_section_header('Standard Operating Procedure')
-            pdf.add_transcript(polished_text)
+            pdf.add_transcript(final_sop)
             
             # Save PDF
             pdf.output(pdf_path)
@@ -414,11 +568,13 @@ def upload_file():
             conn.commit()
             conn.close()
             
-            print("✓ PDF generation complete!", flush=True)
+            print(f"✓ PDF generation complete! Audit: {audit_status}", flush=True)
             
             return jsonify({
                 'message': 'Processing complete',
-                'download_url': f'/download/{pdf_filename}'
+                'download_url': f'/download/{pdf_filename}',
+                'audit_status': audit_status,
+                'audit_reason': audit_reason
             })
 
         except Exception as e:
