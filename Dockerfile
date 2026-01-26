@@ -24,4 +24,4 @@ RUN mkdir -p uploads outputs
 EXPOSE 7860
 
 # Run gunicorn
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:7860", "--timeout", "120"]
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:7860", "--timeout", "600"]

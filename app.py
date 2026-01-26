@@ -62,9 +62,9 @@ def init_db():
 init_db()
 
 # Load Whisper model (do this once at startup or lazy load)
-# Using 'base' model as requested
+# Using 'tiny' model for faster CPU processing
 try:
-    model = whisper.load_model("base")
+    model = whisper.load_model("tiny")
 except Exception as e:
     print(f"Error loading Whisper model: {e}")
     model = None
@@ -99,6 +99,7 @@ def upload_file():
         try:
             # Process video
             # 1. Extract Audio
+            print("Step 1: Extracting Audio...", flush=True)
             audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")
             # FIX: Use VideoFileClip directly without mp. prefix
             clip = VideoFileClip(video_path)
@@ -106,6 +107,7 @@ def upload_file():
             clip.close()
             
             # 2. Transcribe
+            print("Step 2: Transcribing...", flush=True)
             if model is None:
                raise Exception("Whisper model not loaded")
             
@@ -113,6 +115,7 @@ def upload_file():
             transcript_text = result['text']
             
             # 3. Generate PDF
+            print("Step 3: Generating PDF...", flush=True)
             pdf_filename = f"{job_id}.pdf"
             pdf_path = os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename)
             
