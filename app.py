@@ -6,6 +6,7 @@ import re
 import sqlite3
 import uuid
 import datetime
+import requests
 from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from werkzeug.utils import secure_filename
 from moviepy import VideoFileClip
@@ -86,6 +87,7 @@ class AuditorSkill:
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'outputs'
+app.config['FONT_FOLDER'] = 'fonts'
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB limit
 
 @app.errorhandler(413)
@@ -100,6 +102,7 @@ def internal_server_error(error):
 # Ensure directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+os.makedirs(app.config['FONT_FOLDER'], exist_ok=True)
 
 # FIX: Add ffmpeg to PATH for Whisper and MoviePy
 try:
@@ -137,10 +140,36 @@ init_db()
 # Load Whisper model (do this once at startup or lazy load)
 # Using 'tiny' model for faster CPU processing
 try:
-    model = whisper.load_model("tiny")
+    # UPGRADE: Using 'base' model for better accuracy than 'tiny'
+    model = whisper.load_model("base")
 except Exception as e:
     print(f"Error loading Whisper model: {e}")
     model = None
+
+# ============================================
+# FONT DOWNLOADER
+# ============================================
+def download_font():
+    """Download a unicode-capable font (DejaVuSans) if not present."""
+    font_path = os.path.join(app.config['FONT_FOLDER'], 'DejaVuSans.ttf')
+    if not os.path.exists(font_path):
+        print("Downloading unicode font...", flush=True)
+        try:
+            # Use a reliable source for DejaVuSans
+            url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                with open(font_path, 'wb') as f:
+                    f.write(response.content)
+                print("✓ Font downloaded successfully", flush=True)
+            else:
+                print(f"⚠ Failed to download font: {response.status_code}", flush=True)
+        except Exception as e:
+            print(f"⚠ Font download error: {e}", flush=True)
+    return font_path
+
+# Trigger font download on startup
+FONT_PATH = download_font()
 
 
 # ============================================
@@ -345,11 +374,22 @@ class PDF(FPDF):
         super().__init__()
         self.audit_status = 'PASS'
         self.audit_reason = ''
+        
+        # Load unicode font if available
+        font_path = os.path.join(app.config['FONT_FOLDER'], 'DejaVuSans.ttf')
+        self.has_unicode = os.path.exists(font_path)
+        if self.has_unicode:
+            self.add_font('DejaVu', '', font_path, uni=True)
+            self.main_font = 'DejaVu'
+            print("✓ Loaded unicode font: DejaVu", flush=True)
+        else:
+            self.main_font = 'Arial'
+            print("⚠ Warning: Unicode font not found, falling back to Arial", flush=True)
     
     def header(self):
         """Add header to every page (except cover page)."""
         if self.page_no() > 1:  # Skip header on cover page
-            self.set_font('Arial', 'B', 10)
+            self.set_font(self.main_font, '', 10) # Use regular weight for unicode compat
             self.set_text_color(100, 100, 100)
             # Position at top right
             self.set_xy(-60, 10)
@@ -359,7 +399,7 @@ class PDF(FPDF):
     def footer(self):
         """Add page numbers to every page."""
         self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
+        self.set_font(self.main_font, '', 8)
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
     
@@ -367,71 +407,88 @@ class PDF(FPDF):
         """Create a professional cover page with audit status."""
         self.add_page()
         
-        # Background accent line - color based on audit status
+        # Full page gradient-ish effect by side rect
         if audit_status == 'PASS':
-            self.set_fill_color(34, 197, 94)  # Green
+           self.set_fill_color(34, 197, 94)  # Green accents
         else:
-            self.set_fill_color(239, 68, 68)  # Red
-        self.rect(0, 100, 210, 5, 'F')
+           self.set_fill_color(239, 68, 68)  # Red accents
+           
+        # Sidebar stripe
+        self.rect(0, 0, 10, 297, 'F')
+        
+        # Logo placeholder area
+        self.set_y(60)
+        self.set_font(self.main_font, '', 40)
+        self.set_text_color(30, 30, 30)
+        self.cell(0, 20, "SOP", 0, 1, 'C')
+        
+        # Title Background
+        self.set_y(100)
         
         # Title
-        self.set_y(120)
-        self.set_font('Arial', 'B', 28)
+        self.set_font(self.main_font, '', 24)
         self.set_text_color(30, 30, 30)
-        self.multi_cell(0, 15, title, 0, 'C')
+        self.multi_cell(0, 12, title, 0, 'C')
         
         # Subtitle
-        self.ln(10)
-        self.set_font('Arial', '', 14)
+        self.ln(5)
+        self.set_font(self.main_font, '', 14)
         self.set_text_color(100, 100, 100)
-        self.cell(0, 10, 'Standard Operating Procedure', 0, 1, 'C')
+        self.cell(0, 10, 'Standard Operating Procedure Document', 0, 1, 'C')
         
         # Audit Status Badge
-        self.ln(15)
+        self.ln(20)
         if audit_status == 'PASS':
             self.set_fill_color(220, 252, 231)  # Light green bg
             self.set_text_color(22, 163, 74)  # Green text
-            status_text = 'AUDIT STATUS: APPROVED'
+            status_text = '  AUDIT STATUS: APPROVED  '
         else:
             self.set_fill_color(254, 226, 226)  # Light red bg
             self.set_text_color(220, 38, 38)  # Red text
-            status_text = 'AUDIT STATUS: DRAFT REJECTED'
+            status_text = '  AUDIT STATUS: REJECTED  '
         
-        self.set_font('Arial', 'B', 12)
+        self.set_font(self.main_font, '', 12)
         # Center the badge
-        badge_width = self.get_string_width(status_text) + 20
+        badge_width = self.get_string_width(status_text) + 10
         x_pos = (210 - badge_width) / 2
+        
+        # Draw rounded rect (simulated by standard rect for fpdf1.7)
         self.set_x(x_pos)
         self.cell(badge_width, 12, status_text, 0, 1, 'C', True)
         
         # Audit reason if failed
         if audit_status != 'PASS' and audit_reason:
             self.ln(5)
-            self.set_font('Arial', 'I', 10)
+            self.set_font(self.main_font, '', 10)
             self.set_text_color(220, 38, 38)
             self.multi_cell(0, 6, f'Reason: {audit_reason}', 0, 'C')
         
-        # Date
-        self.ln(15)
-        self.set_font('Arial', '', 12)
+        # Generation Date
+        self.set_y(-60)
+        self.set_font(self.main_font, '', 11)
         self.set_text_color(80, 80, 80)
         today = datetime.datetime.now().strftime('%B %d, %Y')
-        self.cell(0, 10, f'Generated on: {today}', 0, 1, 'C')
+        self.cell(0, 10, f'Generated on: {today}', 0, 1, 'R')
         
-        # Branding
-        self.set_y(-50)
-        self.set_font('Arial', 'I', 10)
+        # Branding line
+        self.set_draw_color(200, 200, 200)
+        self.line(20, 255, 190, 255)
+        self.set_y(-30)
+        self.set_font(self.main_font, '', 9)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, 'Powered by Docu-Genie Enterprise AI', 0, 1, 'C')
+        self.cell(0, 10, 'Generated by Docu-Genie Enterprise AI', 0, 0, 'C')
     
     def add_section_header(self, title):
         """Add a styled section header."""
         self.ln(10)
-        self.set_font('Arial', 'B', 16)
+        self.set_font(self.main_font, '', 16)
         self.set_text_color(79, 70, 229)  # Indigo color
         self.cell(0, 10, title, 0, 1, 'L')
+        # Underline
         self.set_draw_color(79, 70, 229)
+        self.set_line_width(0.5)
         self.line(10, self.get_y(), 200, self.get_y())
+        self.set_line_width(0.2)
         self.ln(5)
     
     def add_warning_banner(self, message):
@@ -439,34 +496,45 @@ class PDF(FPDF):
         self.ln(5)
         self.set_fill_color(254, 243, 199)  # Amber background
         self.set_text_color(180, 83, 9)  # Amber text
-        self.set_font('Arial', 'B', 11)
+        self.set_font(self.main_font, '', 11)
         self.multi_cell(0, 8, f'WARNING: {message}', 0, 'L', True)
         self.set_text_color(50, 50, 50)
         self.ln(5)
     
     def add_transcript(self, text):
         """Add transcript text with proper formatting."""
-        self.set_font('Arial', '', 11)
+        self.set_font(self.main_font, '', 11)
         self.set_text_color(50, 50, 50)
-        # Handle unicode safely
-        safe_text = text.encode('latin-1', 'replace').decode('latin-1')
-        self.multi_cell(0, 7, safe_text)
+        
+        # With unicode font, we don't need encode/decode latin-1 workaround
+        # which was actively destroying hindi characters
+        try:
+             self.multi_cell(0, 7, text)
+        except Exception as e:
+             # Fallback if font fails for some reason
+             print(f"PDF Render Error: {e}", flush=True)
+             safe_text = text.encode('latin-1', 'replace').decode('latin-1')
+             self.multi_cell(0, 7, safe_text)
     
     def add_screenshot(self, image_path, caption=""):
         """Add a screenshot with optional caption."""
         if os.path.exists(image_path):
             # Check if we need a new page (leave room for image)
-            if self.get_y() > 200:
+            if self.get_y() > 180:
                 self.add_page()
             
-            # Add image centered, fitting page width
-            page_width = 190  # A4 width minus margins
-            self.image(image_path, x=10, w=page_width)
+            self.ln(5)
+            # Add image centered, fitting page width with simple border
+            self.set_draw_color(230, 230, 230)
+            self.rect(10, self.get_y(), 190, 100) # Placeholder rect
+            
+            page_width = 188  # Slightly smaller than rect
+            self.image(image_path, x=11, w=page_width)
             
             # Add caption if provided
             if caption:
                 self.ln(3)
-                self.set_font('Arial', 'I', 9)
+                self.set_font(self.main_font, '', 9)
                 self.set_text_color(100, 100, 100)
                 self.cell(0, 5, caption, 0, 1, 'C')
             self.ln(5)
@@ -525,6 +593,7 @@ def upload_file():
             # =====================
             # STEP 2: Transcribe
             # =====================
+            # Upgrade whisper model at startup (see top of file)
             print("Step 2: Transcribing with Whisper...", flush=True)
             if model is None:
                raise Exception("Whisper model not loaded")
@@ -595,7 +664,7 @@ def upload_file():
             # Content page
             pdf.add_page()
             
-            # BUG FIX 3: Reset cursor to top margin after cover page
+            # Reset cursor to top margin
             pdf.set_y(45)
             
             # Add warning banner if audit failed
