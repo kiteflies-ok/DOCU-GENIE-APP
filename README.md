@@ -72,8 +72,8 @@ Upload any video tutorial, training session, or walkthrough — and Docu-Genie w
 ### Local Development
 
 ```bash
-git clone https://github.com/kiteflies-ok/AI-POWERED-SOP.git
-cd AI-POWERED-SOP
+git clone https://github.com/kiteflies-ok/docu-genie-app.git
+cd docu-genie-app
 pip install -r requirements.txt
 python app.py
 ```
