@@ -221,14 +221,14 @@ TRANSCRIPT:
 PROFESSIONAL SOP (in {target_language}):"""
 
         # Call the model with increased tokens for detailed output
-        response = client.text_generation(
-            prompt,
-            max_new_tokens=2048,
-            temperature=0.5,
-            do_sample=True,
+        messages = [{"role": "user", "content": prompt}]
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=2048,
+            temperature=0.5
         )
         
-        polished_text = response.strip()
+        polished_text = response.choices[0].message.content.strip()
         
         # Validate we got a reasonable response
         if len(polished_text) > 100:
@@ -266,14 +266,14 @@ Question: {question}
 
 Answer:"""
 
-        response = client.text_generation(
-            prompt,
-            max_new_tokens=512,
-            temperature=0.3,
-            do_sample=True,
+        messages = [{"role": "user", "content": prompt}]
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=512,
+            temperature=0.3
         )
         
-        return response.strip()
+        return response.choices[0].message.content.strip()
         
     except Exception as e:
         print(f"⚠ Chat error: {e}", flush=True)
