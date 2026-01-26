@@ -197,10 +197,15 @@ class ContentPDF(FPDF):
         super().__init__()
         font_path = os.path.join(app.config['FONT_FOLDER'], 'DejaVuSans.ttf')
         self.has_unicode = os.path.exists(font_path)
-        if self.has_unicode:
-            self.add_font('DejaVu', '', font_path, uni=True)
-            self.main_font = 'DejaVu'
-        else:
+        try:
+            if self.has_unicode:
+                self.add_font('DejaVu', '', font_path, uni=True)
+                self.main_font = 'DejaVu'
+            else:
+                raise Exception("Font file missing")
+        except Exception as e:
+            print(f"Font loading failed ({e}). Fallback to Arial.")
+            self.has_unicode = False
             self.main_font = 'Arial'
 
     def header(self):
@@ -360,7 +365,7 @@ def upload_file():
         pdf.chapter_title("Executive Summary")
         if audit['status'] != 'PASS':
             pdf.set_text_color(255, 0, 0)
-            pdf.cell(0, 10, f"NOTE: {audit['reason']}", 0, 1)
+            pdf.cell(0, 10, pdf.sanitize_text(f"NOTE: {audit['reason']}"), 0, 1)
         pdf.chapter_body(sections['SECTION 1'])
         
         # PAGE 2: Video Script
@@ -454,7 +459,7 @@ Answer based on the content above. You can rewrite tweets, summarize script, etc
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_from_directory(app.config['OUTPUT_FOLDER'], filename)
+    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=7860)
