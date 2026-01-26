@@ -417,6 +417,10 @@ def upload_file():
         pdf.chapter_title("Social Media Pack")
         pdf.chapter_body(sections['SECTION 3'])
         
+        generated_filename = f"{job_id}_transcript.txt"
+        with open(os.path.join(app.config['OUTPUT_FOLDER'], generated_filename), 'w', encoding='utf-8') as f:
+            f.write(raw_text)
+
         output_filename = f"{job_id}.pdf"
         pdf.output(os.path.join(app.config['OUTPUT_FOLDER'], output_filename))
 
@@ -428,6 +432,7 @@ def upload_file():
         return jsonify({
             'message': 'Success',
             'download_url': f'/download/{output_filename}',
+            'transcript_url': f'/download/{generated_filename}',
             'transcript_text': generated_text, # Sending FULL generated text for Chatbot context
             'audit_status': audit['status']
         })

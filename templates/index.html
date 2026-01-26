@@ -97,10 +97,10 @@
             <div class="mb-8 text-center">
                 <div
                     class="inline-block px-3 py-1 mb-4 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs tracking-widest text-indigo-300 uppercase">
-                    New Engine v2.0
+                    New Engine v1.0
                 </div>
                 <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight mb-2">
-                    DOCU <span
+                    DOCU - <span
                         class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">GENIE</span>
                 </h1>
                 <p class="text-white/40 font-light">
@@ -189,6 +189,15 @@
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                         </svg>
                         Download PDF Report
+                    </a>
+                    <a id="download-transcript" href="#"
+                        class="w-full bg-indigo-900/50 text-indigo-200 font-bold py-3 rounded-xl hover:bg-indigo-900/80 transition-colors flex items-center justify-center gap-2 border border-indigo-500/30">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>
+                        Download Script (TXT)
                     </a>
                     <button id="show-chat-btn"
                         class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors">
@@ -313,6 +322,15 @@
                 loading.classList.add('hidden');
                 success.classList.remove('hidden');
                 downloadLink.href = data.download_url;
+
+                // Add Transcript Link
+                const transcriptBtn = document.getElementById('download-transcript');
+                if (data.transcript_url) {
+                    transcriptBtn.href = data.transcript_url;
+                    transcriptBtn.classList.remove('hidden');
+                } else {
+                    transcriptBtn.classList.add('hidden');
+                }
 
                 // Store context for chat
                 generatedContent = data.transcript_text;

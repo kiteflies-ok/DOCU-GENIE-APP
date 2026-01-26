@@ -9,7 +9,7 @@ pinned: false
 
 # 🧞 Docu-Genie
 
-**Transform videos into professional Standard Operating Procedure (SOP) documents using AI.**
+**Transform videos into professional documents using AI.**
 
 Upload any video tutorial, training session, or walkthrough — and Docu-Genie will automatically transcribe it, polish it with AI, and generate a beautiful PDF document complete with screenshots.
 
