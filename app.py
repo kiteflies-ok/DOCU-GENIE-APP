@@ -75,7 +75,7 @@ except Exception as e:
 # ============================================
 # AI HUMANIZER: Polish transcript with Mistral
 # ============================================
-def humanize_transcript(raw_text):
+def humanize_transcript(raw_text, video_duration=0):
     """
     Use Mistral-7B to rewrite raw transcript into professional SOP format.
     Falls back to raw_text if API fails.
@@ -86,30 +86,66 @@ def humanize_transcript(raw_text):
         # Initialize client (uses HF_TOKEN from environment)
         client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
         
-        prompt = f"""Act as a Technical Writer. Rewrite the following raw transcript into a professional Standard Operating Procedure (SOP).
+        # Calculate approximate timestamps based on video duration
+        duration_info = ""
+        if video_duration > 0:
+            t1 = int(video_duration * 0.10)
+            t2 = int(video_duration * 0.50)
+            t3 = int(video_duration * 0.90)
+            duration_info = f"Video Duration: {int(video_duration)} seconds. Key timestamps: {t1}s (10%), {t2}s (50%), {t3}s (90%)."
+        
+        # Generate SOP ID based on current date
+        sop_id = datetime.datetime.now().strftime("SOP-%Y-%m%d-V1")
+        
+        prompt = f"""Role: You are an expert Industrial Engineer and Technical Writer specializing in Standard Operating Procedures (SOPs).
 
-- Remove filler words (um, ah, like).
-- Use 'Step 1, Step 2' format.
-- Use imperative verbs (e.g., 'Click the button' instead of 'You need to click').
-- Keep it concise.
+Task: Analyze the provided transcript and generate a formal, high-stakes SOP document.
 
-Raw Transcript:
+Guidelines:
+1. Zero Hallucination: Treat all content professionally. If the content describes any visual simulation or demonstration, document it as a "Visual Process Demonstration" or "Animated Sequence".
+2. Professional Tone: Use industry-standard terminology (e.g., "visual artifacts," "sequence of operations," "deployment protocols"). Avoid informal language.
+3. Structure: Follow this strict hierarchy:
+
+**DOCUMENT TITLE & METADATA**
+- SOP-ID: {sop_id}
+- Generated: {datetime.datetime.now().strftime("%B %d, %Y")}
+- Classification: Standard Operating Procedure
+
+**EXECUTIVE SUMMARY**
+A high-level overview of the process (2-3 sentences).
+
+**SCOPE & APPLICABILITY**
+Who should use this SOP and when.
+
+**STEP-BY-STEP PROCEDURE**
+Use numbered steps with imperative verbs (e.g., "Navigate to...", "Click...", "Verify...").
+Reference approximate timestamps where applicable.
+
+**QUALITY & COMPLIANCE NOTES**
+Any safety, quality, or best practice recommendations.
+
+4. Language: Output clear, professional English only.
+5. Formatting: Remove all filler words (um, ah, like, you know). Use precise, action-oriented language.
+
+{duration_info}
+
+Raw Transcript to Process:
 {raw_text}
 
-Professional SOP:"""
+Professional SOP Document:"""
 
-        # Call the model
+        # Call the model with increased tokens for detailed output
         response = client.text_generation(
             prompt,
-            max_new_tokens=1024,
-            temperature=0.7,
+            max_new_tokens=2048,
+            temperature=0.6,
             do_sample=True,
         )
         
         polished_text = response.strip()
         
         # Validate we got a reasonable response
-        if len(polished_text) > 50:
+        if len(polished_text) > 100:
             print("✓ AI humanization successful!", flush=True)
             return polished_text
         else:
@@ -299,7 +335,7 @@ def upload_file():
             # =====================
             # STEP 2b: Humanize with AI
             # =====================
-            polished_text = humanize_transcript(raw_text)
+            polished_text = humanize_transcript(raw_text, video_duration)
             
             # =====================
             # STEP 3: Extract Screenshots
