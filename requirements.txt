@@ -8,3 +8,4 @@ imageio_ffmpeg
 Pillow
 numpy
 huggingface_hub
+requests
