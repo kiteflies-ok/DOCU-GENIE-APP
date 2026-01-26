@@ -153,7 +153,7 @@ def humanize_transcript(raw_text, video_duration=0, target_language='English'):
     Supports multiple languages via target_language parameter.
     Includes fallback translation retry logic.
     """
-    client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
+    client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta")
     
     # -------------------------------------------------------------
     # ATTEMPT 1: Full SOP Generation
@@ -281,7 +281,7 @@ def answer_question(question, context):
     Uses Mistral-7B for accurate, context-grounded responses.
     """
     try:
-        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.2")
+        client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta")
         
         prompt = f"""You are a helpful assistant that answers questions about Standard Operating Procedures.
 Answer the following question using ONLY the information provided in the context below.
@@ -529,7 +529,7 @@ def upload_file():
             if model is None:
                raise Exception("Whisper model not loaded")
             
-            result = model.transcribe(audio_path)
+            result = model.transcribe(audio_path, fp16=False)
             raw_text = result['text']
             
             # =====================
