@@ -146,13 +146,14 @@ except Exception as e:
 # ============================================
 # AI WRITER: One-Shot Learning SOP Generator
 # ============================================
-def humanize_transcript(raw_text, video_duration=0):
+def humanize_transcript(raw_text, video_duration=0, target_language='English'):
     """
     Enterprise Writer Agent: Uses One-Shot Learning to generate professional SOPs.
+    Supports multiple languages via target_language parameter.
     Falls back to raw_text if API fails.
     """
     try:
-        print("Step 2b: Writer Agent generating SOP...", flush=True)
+        print(f"Step 2b: Writer Agent generating SOP in {target_language}...", flush=True)
         
         # Initialize client (uses HF_TOKEN from environment)
         client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
@@ -169,10 +170,12 @@ def humanize_transcript(raw_text, video_duration=0):
         sop_id = datetime.datetime.now().strftime("SOP-%Y-%m%d-V1")
         current_date = datetime.datetime.now().strftime("%B %d, %Y")
         
-        # ONE-SHOT LEARNING PROMPT
+        # ONE-SHOT LEARNING PROMPT with language support
         prompt = f"""You are an expert Technical Writer specializing in Standard Operating Procedures (SOPs).
 
-Rewrite the following transcript into a professional SOP following this EXACT format:
+Act as a Technical Writer. Rewrite the transcript into a professional SOP in {target_language}.
+
+Follow this EXACT format (but write the content in {target_language}):
 
 ### EXAMPLE OUTPUT:
 ---
@@ -205,7 +208,8 @@ Step 5: Verify connectivity by checking the status lights (green = operational).
 ---
 
 ### YOUR TASK:
-Using the EXACT format above, rewrite this transcript into a professional SOP:
+Using the EXACT format above, rewrite this transcript into a professional SOP.
+IMPORTANT: Write the entire SOP content in {target_language}.
 
 SOP-ID to use: {sop_id}
 Date: {current_date}
@@ -214,7 +218,7 @@ Date: {current_date}
 TRANSCRIPT:
 {raw_text}
 
-PROFESSIONAL SOP:"""
+PROFESSIONAL SOP (in {target_language}):"""
 
         # Call the model with increased tokens for detailed output
         response = client.text_generation(
@@ -238,6 +242,42 @@ PROFESSIONAL SOP:"""
         print(f"⚠ Writer Agent failed: {e}", flush=True)
         print("→ Falling back to raw transcript", flush=True)
         return raw_text
+
+
+# ============================================
+# Q&A CHATBOT: Context-based answering
+# ============================================
+def answer_question(question, context):
+    """
+    Answer a question based only on the provided context.
+    Uses Mistral-7B for accurate, context-grounded responses.
+    """
+    try:
+        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
+        
+        prompt = f"""You are a helpful assistant that answers questions about Standard Operating Procedures.
+Answer the following question using ONLY the information provided in the context below.
+If the answer is not in the context, say "I cannot find this information in the document."
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
+        response = client.text_generation(
+            prompt,
+            max_new_tokens=512,
+            temperature=0.3,
+            do_sample=True,
+        )
+        
+        return response.strip()
+        
+    except Exception as e:
+        print(f"⚠ Chat error: {e}", flush=True)
+        return f"Sorry, I encountered an error: {str(e)}"
 
 
 # ============================================
@@ -408,6 +448,7 @@ class PDF(FPDF):
 def index():
     return render_template('index.html')
 
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'video' not in request.files:
@@ -416,6 +457,9 @@ def upload_file():
     file = request.files['video']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
+    
+    # Get target language from form (default to English)
+    target_language = request.form.get('language', 'English')
     
     if file:
         filename = secure_filename(file.filename)
@@ -461,9 +505,9 @@ def upload_file():
             raw_text = result['text']
             
             # =====================
-            # STEP 2b: Writer Agent generates SOP
+            # STEP 2b: Writer Agent generates SOP (with language)
             # =====================
-            draft_sop = humanize_transcript(raw_text, video_duration)
+            draft_sop = humanize_transcript(raw_text, video_duration, target_language)
             
             # =====================
             # STEP 2c: Auditor validates SOP
@@ -570,11 +614,14 @@ def upload_file():
             
             print(f"✓ PDF generation complete! Audit: {audit_status}", flush=True)
             
+            # Return download URL AND transcript for chatbot
             return jsonify({
                 'message': 'Processing complete',
                 'download_url': f'/download/{pdf_filename}',
+                'transcript_text': raw_text,
                 'audit_status': audit_status,
-                'audit_reason': audit_reason
+                'audit_reason': audit_reason,
+                'language': target_language
             })
 
         except Exception as e:
@@ -594,6 +641,43 @@ def upload_file():
             conn.commit()
             conn.close()
             return jsonify({'error': str(e)}), 500
+
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    """
+    Q&A Chatbot endpoint.
+    Accepts: { "question": "...", "context": "..." }
+    Returns: { "answer": "..." }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        question = data.get('question', '').strip()
+        context = data.get('context', '').strip()
+        
+        if not question:
+            return jsonify({'error': 'Question is required'}), 400
+        
+        if not context:
+            return jsonify({'error': 'Context is required'}), 400
+        
+        print(f"Chat Q: {question[:50]}...", flush=True)
+        
+        answer = answer_question(question, context)
+        
+        return jsonify({
+            'answer': answer,
+            'question': question
+        })
+        
+    except Exception as e:
+        print(f"Chat error: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/download/<filename>')
 def download_file(filename):
