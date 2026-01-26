@@ -14,72 +14,44 @@ import whisper
 from fpdf import FPDF
 from huggingface_hub import InferenceClient
 
-
 # ============================================
-# AUDITOR SKILL: Safety & Structure Validator
+# AUDITOR SKILL: Structure Validator
 # ============================================
 class AuditorSkill:
     """
-    Enterprise-grade auditor that validates SOP documents for:
-    1. Safety compliance - checks for dangerous/bypass language
-    2. Structure compliance - ensures proper step formatting (works with any language)
-    3. Quality standards - validates professional formatting
+    Validates Content Repurposing Output.
+    Rules:
+    1. Must contain 'SECTION 1' (Executive Summary)
+    2. Must contain 'SECTION 2' (Video Script)
     """
     
     def __init__(self):
-        self.dangerous_terms = [
-            'ignore warning', 
-            'bypass safety', 
-            'force', 
-            "don't worry",
-            'skip verification',
-            'override',
-            'disable protection',
-            'turn off safety',
-            'ignore error'
-        ]
-        
-        # BUG FIX 1: Recognize generic numbering patterns (1., 1:, 1), Step 1, चरण 1)
-        self.step_pattern = re.compile(r'(?:step|चरण)?\s*\d+[:\.\)]', re.MULTILINE | re.IGNORECASE)
+        pass
     
     def run_audit(self, text):
-        """
-        Run comprehensive audit on SOP document.
-        Returns dict with status ('PASS' or 'FAIL') and reason.
-        """
-        text_lower = text.lower()
+        text_upper = text.upper()
         
-        # 1. Safety Check - Look for dangerous terms
-        for term in self.dangerous_terms:
-            if term in text_lower:
-                return {
-                    'status': 'FAIL', 
-                    'reason': f'Safety violation detected: "{term}"',
-                    'severity': 'HIGH'
-                }
+        # Rule: Check for major sections
+        has_sec1 = "SECTION 1" in text_upper
+        has_sec2 = "SECTION 2" in text_upper
         
-        # 2. Structure Check - Ensure numbered steps exist using regex
-        # Checks if there are at least a few numbered items (e.g. 1., 2.)
-        matches = self.step_pattern.findall(text)
-        if len(matches) < 2:  # Expecting at least 2 steps
+        if not has_sec1:
             return {
                 'status': 'FAIL', 
-                'reason': 'Missing numbered steps structure (e.g., 1., 2.)',
+                'reason': 'Missing SECTION 1: EXECUTIVE SUMMARY',
+                'severity': 'HIGH'
+            }
+        
+        if not has_sec2:
+            return {
+                'status': 'FAIL', 
+                'reason': 'Missing SECTION 2: VIDEO SCRIPT',
                 'severity': 'MEDIUM'
             }
-        
-        # 3. Length Check - Ensure substantial content
-        if len(text) < 100:
-            return {
-                'status': 'FAIL',
-                'reason': 'Content too brief for professional SOP',
-                'severity': 'LOW'
-            }
-        
-        # 4. All checks passed
+            
         return {
             'status': 'PASS', 
-            'reason': 'All compliance checks passed',
+            'reason': 'All content sections present',
             'severity': 'NONE'
         }
 
@@ -98,35 +70,26 @@ def request_entity_too_large(error):
 def internal_server_error(error):
     return jsonify({'error': 'Internal Server Error'}), 500
 
-
 # Ensure directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 os.makedirs(app.config['FONT_FOLDER'], exist_ok=True)
 
-# FIX: Add ffmpeg to PATH for Whisper and MoviePy
+# FFmpeg configuration
 try:
     import imageio_ffmpeg
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     ffmpeg_dir = os.path.dirname(ffmpeg_exe)
-    
-    # Prepend to PATH (more reliable than appending)
     os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
-    
-    # Set multiple environment variables for maximum compatibility
     os.environ["FFMPEG_BINARY"] = ffmpeg_exe
     os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_exe
-    
     print(f"✓ FFmpeg configured: {ffmpeg_exe}")
-except ImportError:
-    print("⚠ Warning: imageio_ffmpeg not found")
 except Exception as e:
     print(f"⚠ Warning: Could not configure FFmpeg: {e}")
 
 
 # Database setup
 DB_FILE = 'database.db'
-
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -134,650 +97,294 @@ def init_db():
                  (id TEXT PRIMARY KEY, filename TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     conn.commit()
     conn.close()
-
 init_db()
 
-# Load Whisper model (do this once at startup or lazy load)
-# Using 'tiny' model for faster CPU processing
+# Load Whisper
 try:
-    # UPGRADE: Using 'base' model for better accuracy than 'tiny'
     model = whisper.load_model("base")
 except Exception as e:
     print(f"Error loading Whisper model: {e}")
     model = None
 
-# ============================================
-# FONT DOWNLOADER
-# ============================================
+# Font Downloader
 def download_font():
-    """Download a unicode-capable font (DejaVuSans) if not present."""
     font_path = os.path.join(app.config['FONT_FOLDER'], 'DejaVuSans.ttf')
     if not os.path.exists(font_path):
         print("Downloading unicode font...", flush=True)
         try:
-            # Use a reliable source for DejaVuSans
             url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 with open(font_path, 'wb') as f:
                     f.write(response.content)
                 print("✓ Font downloaded successfully", flush=True)
-            else:
-                print(f"⚠ Failed to download font: {response.status_code}", flush=True)
         except Exception as e:
             print(f"⚠ Font download error: {e}", flush=True)
     return font_path
 
-# Trigger font download on startup
 FONT_PATH = download_font()
 
 
 # ============================================
-# AI WRITER: One-Shot Learning SOP Generator
+# CONTENT REPURPOSING AGENT
 # ============================================
-def humanize_transcript(raw_text, video_duration=0, target_language='English'):
+def generate_content_pack(raw_text, video_duration=0, target_language='English', style='Professional'):
     """
-    Enterprise Writer Agent: Uses One-Shot Learning to generate professional SOPs.
-    Supports multiple languages via target_language parameter.
-    Includes fallback translation retry logic.
+    Generates a 3-section content pack: Summary, Script, Socials.
     """
     client = InferenceClient(model="Qwen/Qwen2.5-72B-Instruct")
     
-    # -------------------------------------------------------------
-    # ATTEMPT 1: Full SOP Generation
-    # -------------------------------------------------------------
-    try:
-        print(f"Step 2b: Writer Agent generating SOP in {target_language}...", flush=True)
-        
-        # Calculate approximate timestamps based on video duration
-        duration_info = ""
-        if video_duration > 0:
-            t1 = int(video_duration * 0.10)
-            t2 = int(video_duration * 0.50)
-            t3 = int(video_duration * 0.90)
-            duration_info = f"\n\nVideo Duration: {int(video_duration)} seconds. Reference timestamps: {t1}s, {t2}s, {t3}s."
-        
-        sop_id = datetime.datetime.now().strftime("SOP-%Y-%m%d-V1")
-        current_date = datetime.datetime.now().strftime("%B %d, %Y")
-        
-        prompt = f"""You are an expert Technical Writer specializing in Standard Operating Procedures (SOPs).
-You are a professional translator and technical writer. If the user requests {target_language}, you MUST translate the output. Do not output English.
+    print(f"Generating content in {target_language} with {style} style...", flush=True)
+    
+    # Time cues
+    duration_info = ""
+    if video_duration > 0:
+        t1 = int(video_duration * 0.10)
+        t2 = int(video_duration * 0.50)
+        t3 = int(video_duration * 0.90)
+        duration_info = f"Video Length: {int(video_duration)}s. Cues: {t1}s, {t2}s, {t3}s."
 
-Act as a Technical Writer. Rewrite the transcript into a professional SOP in {target_language}.
+    prompt = f"""Act as a Lead Content Producer. 
+You are a professional translator and content strategist. 
+If the user requests {target_language}, you MUST translate the output. Do not output English unless requested.
 
-Follow this EXACT format (but write the content in {target_language}):
+Rewrite the transcript in a {style} tone.
+Structure the output exactly into these 3 sections:
 
-### EXAMPLE OUTPUT:
+SECTION 1: EXECUTIVE SUMMARY
+Title: (Catchy title)
+The Hook: (1 sentence)
+Key Takeaways: (3 bullet points)
+
+SECTION 2: VIDEO SCRIPT
+[00:00] INTRO: (Speaker text)
+[Visual Cue]: (Screen instruction)
+[00:30] BODY: (Main content)
+[END] OUTRO: (Call to action)
+
+SECTION 3: SOCIAL MEDIA PACK
+LinkedIn: (Professional post with hashtags)
+Twitter: (3-tweet thread)
+YouTube: (SEO description)
+
 ---
-**DOCUMENT METADATA**
-- SOP-ID: SOP-2026-0101-V1
-- Date: January 01, 2026
-- Classification: Standard Operating Procedure
-
-**TITLE:** How to Reset the Network Router
-
-**OBJECTIVE:** Safely reset network equipment to restore connectivity.
-
-**SCOPE:** This procedure applies to all IT support personnel handling network equipment maintenance.
-
-**PROCEDURE:**
-
-Step 1: Locate the small black reset button on the back panel of the router.
-
-Step 2: Using a paperclip or pin, press and hold the button for 10 seconds.
-
-Step 3: Wait until the LED indicator flashes amber, indicating reset initiation.
-
-Step 4: Release the button and wait 60 seconds for the device to reboot.
-
-Step 5: Verify connectivity by checking the status lights (green = operational).
-
-**COMPLIANCE NOTES:**
-- Always document the reset in the maintenance log.
-- If issues persist after reset, escalate to Level 2 support.
----
-
-### YOUR TASK:
-Using the EXACT format above, rewrite this transcript into a professional SOP.
-IMPORTANT: Write the entire SOP content in {target_language}.
-
-SOP-ID to use: {sop_id}
-Date: {current_date}
+CONTEXT:
+Style: {style}
+Target Language: {target_language}
 {duration_info}
 
 TRANSCRIPT:
 {raw_text}
+"""
 
-PROFESSIONAL SOP (in {target_language}):"""
-
-        messages = [{"role": "user", "content": prompt}]
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=2048,
-            temperature=0.4, # Slightly lower temp for better format adherence
-        )
-        
-        polished_text = response.choices[0].message.content.strip()
-        
-        # Validate response length
-        if len(polished_text) > 100:
-            print("✓ Writer Agent completed successfully!", flush=True)
-            return polished_text
-        else:
-            raise Exception("Response too short")
-
-    except Exception as e:
-        print(f"⚠ SOP Generation failed: {e}", flush=True)
-        
-        # -------------------------------------------------------------
-        # BUG FIX 2: FALLBACK TRANSLATION LOGIC
-        # If full SOP generation fails, at least provide a translation
-        # instead of returning raw English text.
-        # -------------------------------------------------------------
-        if target_language.lower() != 'english':
-            try:
-                print(f"→ Attempting simple translation fallback to {target_language}...", flush=True)
-                
-                fallback_prompt = f"Translate the following text to {target_language}. Maintain the original meaning exactly.\n\nTEXT:\n{raw_text}"
-                
-                messages = [{"role": "user", "content": fallback_prompt}]
-                response = client.chat_completion(
-                    messages=messages,
-                    max_tokens=2048,
-                    temperature=0.3
-                )
-                
-                translated_text = response.choices[0].message.content.strip()
-                if len(translated_text) > 50:
-                    print("✓ Fallback translation successful", flush=True)
-                    # Add a header so we know it's a raw translation
-                    return f"**NOTE: Automatic Translation (SOP Generation Failed)**\n\n{translated_text}"
-            
-            except Exception as trans_e:
-                print(f"⚠ Translation fallback failed: {trans_e}", flush=True)
-        
-        # Last resort: Return raw text
-        print("→ Falling back to raw transcript", flush=True)
-        return raw_text
-
-
-# ============================================
-# Q&A CHATBOT: Context-based answering
-# ============================================
-def answer_question(question, context):
-    """
-    Answer a question based only on the provided context.
-    Uses Mistral-7B for accurate, context-grounded responses.
-    """
-    try:
-        client = InferenceClient(model="Qwen/Qwen2.5-72B-Instruct")
-        
-        prompt = f"""You are a helpful assistant that answers questions about Standard Operating Procedures.
-Answer the following question using ONLY the information provided in the context below.
-If the answer is not in the context, say "I cannot find this information in the document."
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
-
-        messages = [{"role": "user", "content": prompt}]
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=512,
-            temperature=0.3
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        print(f"⚠ Chat error: {e}", flush=True)
-        return f"Sorry, I encountered an error: {str(e)}"
-
-
-# ============================================
-# HELPER FUNCTION: Extract frame from video
-# ============================================
-def extract_frame(video_path, seconds, output_path):
-    """
-    Extract a single frame from video at specified timestamp.
-    Returns the output path if successful, None otherwise.
-    """
-    try:
-        clip = VideoFileClip(video_path)
-        # Ensure we don't exceed video duration
-        timestamp = min(seconds, clip.duration - 0.1)
-        if timestamp < 0:
-            timestamp = 0
-        frame = clip.get_frame(timestamp)
-        clip.close()
-        
-        # Save frame as image using PIL
-        from PIL import Image
-        import numpy as np
-        img = Image.fromarray(frame.astype(np.uint8))
-        img.save(output_path, 'JPEG', quality=85)
-        return output_path
-    except Exception as e:
-        print(f"Error extracting frame at {seconds}s: {e}")
-        return None
-
-
-# ============================================
-# CUSTOM PDF CLASS: Professional SOP Document
-# ============================================
-class PDF(FPDF):
+    messages = [{"role": "user", "content": prompt}]
     
+    try:
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=3000,
+            temperature=0.7, # Higher temp for creativity
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"AI Generation Failed: {e}")
+        return f"Error: {str(e)}\n\nOriginal Transcript:\n{raw_text}"
+
+
+# ============================================
+# PDF GENERATOR
+# ============================================
+class ContentPDF(FPDF):
     def __init__(self):
         super().__init__()
-        self.audit_status = 'PASS'
-        self.audit_reason = ''
-        
-        # Load unicode font if available
         font_path = os.path.join(app.config['FONT_FOLDER'], 'DejaVuSans.ttf')
         self.has_unicode = os.path.exists(font_path)
         if self.has_unicode:
             self.add_font('DejaVu', '', font_path, uni=True)
             self.main_font = 'DejaVu'
-            print("✓ Loaded unicode font: DejaVu", flush=True)
         else:
             self.main_font = 'Arial'
-            print("⚠ Warning: Unicode font not found, falling back to Arial", flush=True)
-    
+
     def header(self):
-        """Add header to every page (except cover page)."""
-        if self.page_no() > 1:  # Skip header on cover page
-            self.set_font(self.main_font, '', 10) # Use regular weight for unicode compat
-            self.set_text_color(100, 100, 100)
-            # Position at top right
-            self.set_xy(-60, 10)
-            self.cell(50, 10, 'Docu-Genie SOP', 0, 0, 'R')
-            self.ln(15)
-    
-    def footer(self):
-        """Add page numbers to every page."""
-        self.set_y(-15)
-        self.set_font(self.main_font, '', 8)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
-    
-    def create_cover_page(self, title, audit_status='PASS', audit_reason=''):
-        """Create a professional cover page with audit status."""
-        self.add_page()
-        
-        # Full page gradient-ish effect by side rect
-        if audit_status == 'PASS':
-           self.set_fill_color(34, 197, 94)  # Green accents
-        else:
-           self.set_fill_color(239, 68, 68)  # Red accents
-           
-        # Sidebar stripe
-        self.rect(0, 0, 10, 297, 'F')
-        
-        # Logo placeholder area
-        self.set_y(60)
-        self.set_font(self.main_font, '', 40)
-        self.set_text_color(30, 30, 30)
-        self.cell(0, 20, "SOP", 0, 1, 'C')
-        
-        # Title Background
-        self.set_y(100)
-        
-        # Title
-        self.set_font(self.main_font, '', 24)
-        self.set_text_color(30, 30, 30)
-        self.multi_cell(0, 12, title, 0, 'C')
-        
-        # Subtitle
-        self.ln(5)
-        self.set_font(self.main_font, '', 14)
-        self.set_text_color(100, 100, 100)
-        self.cell(0, 10, 'Standard Operating Procedure Document', 0, 1, 'C')
-        
-        # Audit Status Badge
-        self.ln(20)
-        if audit_status == 'PASS':
-            self.set_fill_color(220, 252, 231)  # Light green bg
-            self.set_text_color(22, 163, 74)  # Green text
-            status_text = '  AUDIT STATUS: APPROVED  '
-        else:
-            self.set_fill_color(254, 226, 226)  # Light red bg
-            self.set_text_color(220, 38, 38)  # Red text
-            status_text = '  AUDIT STATUS: REJECTED  '
-        
-        self.set_font(self.main_font, '', 12)
-        # Center the badge
-        badge_width = self.get_string_width(status_text) + 10
-        x_pos = (210 - badge_width) / 2
-        
-        # Draw rounded rect (simulated by standard rect for fpdf1.7)
-        self.set_x(x_pos)
-        self.cell(badge_width, 12, status_text, 0, 1, 'C', True)
-        
-        # Audit reason if failed
-        if audit_status != 'PASS' and audit_reason:
-            self.ln(5)
+        if self.page_no() > 1:
             self.set_font(self.main_font, '', 10)
-            self.set_text_color(220, 38, 38)
-            self.multi_cell(0, 6, f'Reason: {audit_reason}', 0, 'C')
-        
-        # Generation Date
-        self.set_y(-60)
-        self.set_font(self.main_font, '', 11)
-        self.set_text_color(80, 80, 80)
-        today = datetime.datetime.now().strftime('%B %d, %Y')
-        self.cell(0, 10, f'Generated on: {today}', 0, 1, 'R')
-        
-        # Branding line
-        self.set_draw_color(200, 200, 200)
-        self.line(20, 255, 190, 255)
-        self.set_y(-30)
-        self.set_font(self.main_font, '', 9)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, 'Generated by Docu-Genie Enterprise AI', 0, 0, 'C')
-    
-    def add_section_header(self, title):
-        """Add a styled section header."""
-        self.ln(10)
-        self.set_font(self.main_font, '', 16)
-        self.set_text_color(79, 70, 229)  # Indigo color
-        self.cell(0, 10, title, 0, 1, 'L')
-        # Underline
-        self.set_draw_color(79, 70, 229)
-        self.set_line_width(0.5)
-        self.line(10, self.get_y(), 200, self.get_y())
-        self.set_line_width(0.2)
+            self.set_text_color(150, 150, 150)
+            self.set_xy(-60, 10)
+            self.cell(50, 10, 'Content Pack', 0, 0, 'R')
+            self.ln(15)
+
+    def chapter_title(self, title):
+        self.set_font(self.main_font, '', 24)
+        self.set_text_color(79, 70, 229) # Indigo
+        self.cell(0, 15, title, 0, 1, 'L')
         self.ln(5)
-    
-    def add_warning_banner(self, message):
-        """Add a prominent warning banner."""
-        self.ln(5)
-        self.set_fill_color(254, 243, 199)  # Amber background
-        self.set_text_color(180, 83, 9)  # Amber text
-        self.set_font(self.main_font, '', 11)
-        self.multi_cell(0, 8, f'WARNING: {message}', 0, 'L', True)
-        self.set_text_color(50, 50, 50)
-        self.ln(5)
-    
-    def add_transcript(self, text):
-        """Add transcript text with proper formatting."""
+
+    def chapter_body(self, body):
         self.set_font(self.main_font, '', 11)
         self.set_text_color(50, 50, 50)
-        
-        # With unicode font, we don't need encode/decode latin-1 workaround
-        # which was actively destroying hindi characters
-        try:
-             self.multi_cell(0, 7, text)
-        except Exception as e:
-             # Fallback if font fails for some reason
-             print(f"PDF Render Error: {e}", flush=True)
-             safe_text = text.encode('latin-1', 'replace').decode('latin-1')
-             self.multi_cell(0, 7, safe_text)
-    
-    def add_screenshot(self, image_path, caption=""):
-        """Add a screenshot with optional caption."""
-        if os.path.exists(image_path):
-            # Check if we need a new page (leave room for image)
-            if self.get_y() > 180:
-                self.add_page()
-            
-            self.ln(5)
-            # Add image centered, fitting page width with simple border
-            self.set_draw_color(230, 230, 230)
-            self.rect(10, self.get_y(), 190, 100) # Placeholder rect
-            
-            page_width = 188  # Slightly smaller than rect
-            self.image(image_path, x=11, w=page_width)
-            
-            # Add caption if provided
-            if caption:
-                self.ln(3)
-                self.set_font(self.main_font, '', 9)
-                self.set_text_color(100, 100, 100)
-                self.cell(0, 5, caption, 0, 1, 'C')
-            self.ln(5)
+        self.multi_cell(0, 7, body)
+        self.ln()
 
+    def add_section_box(self, title, content):
+        self.set_fill_color(245, 247, 250)
+        self.rect(10, self.get_y(), 190, 8, 'F')
+        self.set_font(self.main_font, '', 12)
+        self.set_text_color(0, 0, 0)
+        self.cell(0, 8, title, 0, 1, 'L', True)
+        self.ln(2)
+        self.set_font(self.main_font, '', 10)
+        self.multi_cell(0, 6, content)
+        self.ln(5)
 
+# ============================================
+# ROUTES
+# ============================================
 @app.route('/')
 def index():
     return render_template('index.html')
 
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'video' not in request.files:
-        return jsonify({'error': 'No video file part'}), 400
+        return jsonify({'error': 'No video'}), 400
     
     file = request.files['video']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    # Get target language from form (default to English)
     target_language = request.form.get('language', 'English')
+    style = request.form.get('style', 'Professional (Corporate)')
     
-    if file:
-        filename = secure_filename(file.filename)
-        job_id = str(uuid.uuid4())
-        unique_filename = f"{job_id}_{filename}"
-        video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(video_path)
+    job_id = str(uuid.uuid4())
+    filename = secure_filename(file.filename)
+    video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_{filename}")
+    file.save(video_path)
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO jobs (id, filename, status) VALUES (?, ?, ?)", (job_id, filename, 'processing'))
+    conn.commit()
+    conn.close()
+
+    temp_files = []
+    auditor = AuditorSkill()
+    
+    try:
+        # 1. Audio & Transcribe
+        print("Step 1: Extract/Transcribe...", flush=True)
+        audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")
+        temp_files.append(audio_path)
         
-        # Insert job into DB
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("INSERT INTO jobs (id, filename, status) VALUES (?, ?, ?)", (job_id, unique_filename, 'processing'))
-        conn.commit()
-        conn.close()
+        clip = VideoFileClip(video_path)
+        video_duration = clip.duration
+        clip.audio.write_audiofile(audio_path, logger=None)
         
-        # Track temporary files for cleanup
-        temp_files = []
+        result = model.transcribe(audio_path, fp16=False)
+        raw_text = result['text']
         
-        # Initialize Auditor
-        auditor = AuditorSkill()
-        
-        try:
-            # =====================
-            # STEP 1: Extract Audio
-            # =====================
-            print("Step 1: Extracting Audio...", flush=True)
-            audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")
-            temp_files.append(audio_path)
-            
-            clip = VideoFileClip(video_path)
-            video_duration = clip.duration
-            clip.audio.write_audiofile(audio_path, logger=None)
-            clip.close()
-            
-            # =====================
-            # STEP 2: Transcribe
-            # =====================
-            # Upgrade whisper model at startup (see top of file)
-            print("Step 2: Transcribing with Whisper...", flush=True)
-            if model is None:
-               raise Exception("Whisper model not loaded")
-            
-            result = model.transcribe(audio_path, fp16=False)
-            raw_text = result['text']
-            
-            # =====================
-            # STEP 2b: Writer Agent generates SOP (with language)
-            # =====================
-            draft_sop = humanize_transcript(raw_text, video_duration, target_language)
-            
-            # =====================
-            # STEP 2c: Auditor validates SOP
-            # =====================
-            print("Step 2c: Auditor Agent validating SOP...", flush=True)
-            audit_result = auditor.run_audit(draft_sop)
-            print(f"→ Audit Result: {audit_result['status']} - {audit_result['reason']}", flush=True)
-            
-            # Prepare final content based on audit
-            if audit_result['status'] == 'PASS':
-                final_sop = draft_sop
-                audit_status = 'PASS'
-                audit_reason = audit_result['reason']
-            else:
-                # Add warning header to rejected draft
-                final_sop = f"⚠️ DRAFT REJECTED: {audit_result['reason']}\n\n" + \
-                           "=" * 50 + "\n" + \
-                           "UNVALIDATED DRAFT (Review Required)\n" + \
-                           "=" * 50 + "\n\n" + \
-                           draft_sop
-                audit_status = 'FAIL'
-                audit_reason = audit_result['reason']
-            
-            # =====================
-            # STEP 3: Extract Screenshots
-            # =====================
-            print("Step 3: Extracting Screenshots...", flush=True)
-            screenshot_paths = []
-            
-            # Extract at 10%, 50%, 90% of video duration
-            percentages = [0.10, 0.50, 0.90]
-            for i, pct in enumerate(percentages):
-                timestamp = video_duration * pct
-                screenshot_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{i}.jpg")
-                result_path = extract_frame(video_path, timestamp, screenshot_path)
-                if result_path:
-                    screenshot_paths.append((result_path, timestamp))
-                    temp_files.append(result_path)
-            
-            # =====================
-            # STEP 4: Generate PDF
-            # =====================
-            print("Step 4: Generating PDF...", flush=True)
-            pdf_filename = f"{job_id}.pdf"
-            pdf_path = os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename)
-            
-            # Create professional PDF
-            pdf = PDF()
-            pdf.alias_nb_pages()  # Enable total page count
-            
-            # Title from filename (clean it up)
-            doc_title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
-            
-            # Cover page with audit status
-            pdf.create_cover_page(doc_title, audit_status, audit_reason)
-            
-            # Content page
-            pdf.add_page()
-            
-            # Reset cursor to top margin
-            pdf.set_y(45)
-            
-            # Add warning banner if audit failed
-            if audit_status != 'PASS':
-                pdf.add_warning_banner(f"This document failed automated compliance checks: {audit_reason}")
-            
-            # Screenshots section
-            if screenshot_paths:
-                pdf.add_section_header('Video Screenshots')
-                for img_path, timestamp in screenshot_paths:
-                    minutes = int(timestamp // 60)
-                    seconds = int(timestamp % 60)
-                    caption = f"Screenshot at {minutes}:{seconds:02d}"
-                    pdf.add_screenshot(img_path, caption)
-            
-            # Transcript section (using validated or warned content)
-            pdf.add_section_header('Standard Operating Procedure')
-            pdf.add_transcript(final_sop)
-            
-            # Save PDF
-            pdf.output(pdf_path)
-            
-            # =====================
-            # STEP 5: Cleanup
-            # =====================
-            print("Step 5: Cleaning up temporary files...", flush=True)
-            for temp_file in temp_files:
-                try:
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                except Exception as e:
-                    print(f"Warning: Could not delete temp file {temp_file}: {e}")
-            
-            # Clean up video file too
+        # 2. Extract Screenshots (for Script section)
+        screenshots = []
+        for i, pct in enumerate([0.1, 0.5, 0.9]):
+            ts = video_duration * pct
+            out_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{i}.jpg")
             try:
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-            except Exception as e:
-                print(f"Warning: Could not delete video file: {e}")
+                clip.save_frame(out_path, t=ts)
+                screenshots.append(out_path)
+                temp_files.append(out_path)
+            except: pass
             
-            # Update DB
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute("UPDATE jobs SET status = ? WHERE id = ?", ('completed', job_id))
-            conn.commit()
-            conn.close()
-            
-            print(f"✓ PDF generation complete! Audit: {audit_status}", flush=True)
-            
-            # Return download URL AND transcript for chatbot
-            return jsonify({
-                'message': 'Processing complete',
-                'download_url': f'/download/{pdf_filename}',
-                'transcript_text': raw_text,
-                'audit_status': audit_status,
-                'audit_reason': audit_reason,
-                'language': target_language
-            })
+        clip.close()
 
-        except Exception as e:
-            print(f"Error processing job {job_id}: {e}", flush=True)
-            
-            # Cleanup on error
-            for temp_file in temp_files:
-                try:
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                except:
-                    pass
-            
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute("UPDATE jobs SET status = ? WHERE id = ?", ('failed', job_id))
-            conn.commit()
-            conn.close()
-            return jsonify({'error': str(e)}), 500
+        # 3. Generate Content
+        print("Step 2: AI Generation...", flush=True)
+        generated_text = generate_content_pack(raw_text, video_duration, target_language, style)
+        
+        # 4. Audit
+        audit = auditor.run_audit(generated_text)
+        print(f"Audit: {audit['status']}", flush=True)
 
+        # 5. Parse Sections
+        # Simple splitting by known headers
+        sections = {
+            'SECTION 1': '',
+            'SECTION 2': '',
+            'SECTION 3': ''
+        }
+        
+        current_sec = None
+        for line in generated_text.split('\n'):
+            if 'SECTION 1:' in line.upper(): current_sec = 'SECTION 1'; continue
+            if 'SECTION 2:' in line.upper(): current_sec = 'SECTION 2'; continue
+            if 'SECTION 3:' in line.upper(): current_sec = 'SECTION 3'; continue
+            
+            if current_sec:
+                sections[current_sec] += line + "\n"
+        
+        # Fallback if parsing fails
+        if not sections['SECTION 1']: sections['SECTION 1'] = generated_text
+
+        # 6. Generate PDF
+        print("Step 3: PDF Layout...", flush=True)
+        pdf = ContentPDF()
+        pdf.alias_nb_pages()
+        
+        # PAGE 1: Executive Summary
+        pdf.add_page()
+        pdf.chapter_title("Executive Summary")
+        if audit['status'] != 'PASS':
+            pdf.set_text_color(255, 0, 0)
+            pdf.cell(0, 10, f"NOTE: {audit['reason']}", 0, 1)
+        pdf.chapter_body(sections['SECTION 1'])
+        
+        # PAGE 2: Video Script
+        pdf.add_page()
+        pdf.chapter_title("Video Script")
+        # Add visual context if available
+        if screenshots:
+            pdf.image(screenshots[0], x=150, y=10, w=40)
+        pdf.chapter_body(sections['SECTION 2'])
+        
+        # PAGE 3: Social Media
+        pdf.add_page()
+        pdf.chapter_title("Social Media Pack")
+        pdf.chapter_body(sections['SECTION 3'])
+        
+        output_filename = f"{job_id}.pdf"
+        pdf.output(os.path.join(app.config['OUTPUT_FOLDER'], output_filename))
+
+        # Cleanup
+        for t in temp_files:
+            if os.path.exists(t): os.remove(t)
+        if os.path.exists(video_path): os.remove(video_path)
+
+        return jsonify({
+            'message': 'Success',
+            'download_url': f'/download/{output_filename}',
+            'transcript_text': generated_text, # Sending FULL generated text for Chatbot context
+            'audit_status': audit['status']
+        })
+
+    except Exception as e:
+        print(f"Error: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    """
-    Q&A Chatbot endpoint.
-    Accepts: { "question": "...", "context": "..." }
-    Returns: { "answer": "..." }
-    """
-    try:
-        data = request.get_json()
+    data = request.get_json()
+    question = data.get('question')
+    context = data.get('context') # This is now the Generated Text
+    
+    if not question or not context:
+        return jsonify({'error': 'Missing data'}), 400
         
-        if not data:
-            return jsonify({'error': 'No JSON data provided'}), 400
-        
-        question = data.get('question', '').strip()
-        context = data.get('context', '').strip()
-        
-        if not question:
-            return jsonify({'error': 'Question is required'}), 400
-        
-        if not context:
-            return jsonify({'error': 'Context is required'}), 400
-        
-        print(f"Chat Q: {question[:50]}...", flush=True)
-        
-        answer = answer_question(question, context)
-        
-        return jsonify({
-            'answer': answer,
-            'question': question
-        })
-        
-    except Exception as e:
-        print(f"Chat error: {e}", flush=True)
-        return jsonify({'error': str(e)}), 500
+    client = InferenceClient(model="Qwen/Qwen2.5-72B-Instruct")
+    
+    prompt = f"""You are a content assistant. The user has generated the following content:
+{context}
 
+User Question: {question}
+Answer based on the content above. You can rewrite tweets, summarize script, etc."""
+
+    msg = [{"role": "user", "content": prompt}]
+    resp = client.chat_completion(messages=msg, max_tokens=800)
+    return jsonify({'answer': resp.choices[0].message.content.strip()})
 
 @app.route('/download/<filename>')
 def download_file(filename):
