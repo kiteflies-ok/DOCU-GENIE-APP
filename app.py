@@ -4,6 +4,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 import os
 import sqlite3
 import uuid
+import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from werkzeug.utils import secure_filename
 from moviepy import VideoFileClip
@@ -13,7 +14,7 @@ from fpdf import FPDF
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'outputs'
-app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 100MB limit example
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB limit
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
@@ -69,6 +70,128 @@ except Exception as e:
     print(f"Error loading Whisper model: {e}")
     model = None
 
+
+# ============================================
+# HELPER FUNCTION: Extract frame from video
+# ============================================
+def extract_frame(video_path, seconds, output_path):
+    """
+    Extract a single frame from video at specified timestamp.
+    Returns the output path if successful, None otherwise.
+    """
+    try:
+        clip = VideoFileClip(video_path)
+        # Ensure we don't exceed video duration
+        timestamp = min(seconds, clip.duration - 0.1)
+        if timestamp < 0:
+            timestamp = 0
+        frame = clip.get_frame(timestamp)
+        clip.close()
+        
+        # Save frame as image using PIL
+        from PIL import Image
+        import numpy as np
+        img = Image.fromarray(frame.astype(np.uint8))
+        img.save(output_path, 'JPEG', quality=85)
+        return output_path
+    except Exception as e:
+        print(f"Error extracting frame at {seconds}s: {e}")
+        return None
+
+
+# ============================================
+# CUSTOM PDF CLASS: Professional SOP Document
+# ============================================
+class PDF(FPDF):
+    
+    def header(self):
+        """Add header to every page (except cover page)."""
+        if self.page_no() > 1:  # Skip header on cover page
+            self.set_font('Arial', 'B', 10)
+            self.set_text_color(100, 100, 100)
+            # Position at top right
+            self.set_xy(-60, 10)
+            self.cell(50, 10, 'Docu-Genie SOP', 0, 0, 'R')
+            self.ln(15)
+    
+    def footer(self):
+        """Add page numbers to every page."""
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+    
+    def create_cover_page(self, title):
+        """Create a professional cover page."""
+        self.add_page()
+        
+        # Background accent line
+        self.set_fill_color(79, 70, 229)  # Indigo color
+        self.rect(0, 100, 210, 5, 'F')
+        
+        # Title
+        self.set_y(120)
+        self.set_font('Arial', 'B', 28)
+        self.set_text_color(30, 30, 30)
+        self.multi_cell(0, 15, title, 0, 'C')
+        
+        # Subtitle
+        self.ln(10)
+        self.set_font('Arial', '', 14)
+        self.set_text_color(100, 100, 100)
+        self.cell(0, 10, 'Standard Operating Procedure', 0, 1, 'C')
+        
+        # Date
+        self.ln(20)
+        self.set_font('Arial', '', 12)
+        self.set_text_color(80, 80, 80)
+        today = datetime.datetime.now().strftime('%B %d, %Y')
+        self.cell(0, 10, f'Generated on: {today}', 0, 1, 'C')
+        
+        # Branding
+        self.set_y(-50)
+        self.set_font('Arial', 'I', 10)
+        self.set_text_color(150, 150, 150)
+        self.cell(0, 10, 'Powered by Docu-Genie AI', 0, 1, 'C')
+    
+    def add_section_header(self, title):
+        """Add a styled section header."""
+        self.ln(10)
+        self.set_font('Arial', 'B', 16)
+        self.set_text_color(79, 70, 229)  # Indigo color
+        self.cell(0, 10, title, 0, 1, 'L')
+        self.set_draw_color(79, 70, 229)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(5)
+    
+    def add_transcript(self, text):
+        """Add transcript text with proper formatting."""
+        self.set_font('Arial', '', 11)
+        self.set_text_color(50, 50, 50)
+        # Handle unicode safely
+        safe_text = text.encode('latin-1', 'replace').decode('latin-1')
+        self.multi_cell(0, 7, safe_text)
+    
+    def add_screenshot(self, image_path, caption=""):
+        """Add a screenshot with optional caption."""
+        if os.path.exists(image_path):
+            # Check if we need a new page (leave room for image)
+            if self.get_y() > 200:
+                self.add_page()
+            
+            # Add image centered, fitting page width
+            page_width = 190  # A4 width minus margins
+            self.image(image_path, x=10, w=page_width)
+            
+            # Add caption if provided
+            if caption:
+                self.ln(3)
+                self.set_font('Arial', 'I', 9)
+                self.set_text_color(100, 100, 100)
+                self.cell(0, 5, caption, 0, 1, 'C')
+            self.ln(5)
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -96,17 +219,25 @@ def upload_file():
         conn.commit()
         conn.close()
         
+        # Track temporary files for cleanup
+        temp_files = []
+        
         try:
-            # Process video
-            # 1. Extract Audio
+            # =====================
+            # STEP 1: Extract Audio
+            # =====================
             print("Step 1: Extracting Audio...", flush=True)
             audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")
-            # FIX: Use VideoFileClip directly without mp. prefix
+            temp_files.append(audio_path)
+            
             clip = VideoFileClip(video_path)
+            video_duration = clip.duration
             clip.audio.write_audiofile(audio_path, logger=None)
             clip.close()
             
-            # 2. Transcribe
+            # =====================
+            # STEP 2: Transcribe
+            # =====================
             print("Step 2: Transcribing...", flush=True)
             if model is None:
                raise Exception("Whisper model not loaded")
@@ -114,20 +245,75 @@ def upload_file():
             result = model.transcribe(audio_path)
             transcript_text = result['text']
             
-            # 3. Generate PDF
-            print("Step 3: Generating PDF...", flush=True)
+            # =====================
+            # STEP 3: Extract Screenshots
+            # =====================
+            print("Step 3: Extracting Screenshots...", flush=True)
+            screenshot_paths = []
+            
+            # Extract at 10%, 50%, 90% of video duration
+            percentages = [0.10, 0.50, 0.90]
+            for i, pct in enumerate(percentages):
+                timestamp = video_duration * pct
+                screenshot_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{i}.jpg")
+                result_path = extract_frame(video_path, timestamp, screenshot_path)
+                if result_path:
+                    screenshot_paths.append((result_path, timestamp))
+                    temp_files.append(result_path)
+            
+            # =====================
+            # STEP 4: Generate PDF
+            # =====================
+            print("Step 4: Generating PDF...", flush=True)
             pdf_filename = f"{job_id}.pdf"
             pdf_path = os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename)
             
-            pdf = FPDF()
+            # Create professional PDF
+            pdf = PDF()
+            pdf.alias_nb_pages()  # Enable total page count
+            
+            # Title from filename (clean it up)
+            doc_title = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+            
+            # Cover page
+            pdf.create_cover_page(doc_title)
+            
+            # Content page
             pdf.add_page()
-            pdf.set_font("Arial", size=12)
             
-            # Handle unicode somewhat gracefully with latin-1 conversion or replacement for FPDF simple usage
-            safe_text = transcript_text.encode('latin-1', 'replace').decode('latin-1')
+            # Screenshots section
+            if screenshot_paths:
+                pdf.add_section_header('Video Screenshots')
+                for img_path, timestamp in screenshot_paths:
+                    minutes = int(timestamp // 60)
+                    seconds = int(timestamp % 60)
+                    caption = f"Screenshot at {minutes}:{seconds:02d}"
+                    pdf.add_screenshot(img_path, caption)
             
-            pdf.multi_cell(0, 10, safe_text)
+            # Transcript section
+            pdf.add_section_header('Full Transcript')
+            pdf.add_transcript(transcript_text)
+            
+            # Save PDF
             pdf.output(pdf_path)
+            
+            # =====================
+            # STEP 5: Cleanup
+            # =====================
+            print("Step 5: Cleaning up temporary files...", flush=True)
+            for temp_file in temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except Exception as e:
+                    print(f"Warning: Could not delete temp file {temp_file}: {e}")
+            
+            # Clean up video file too
+            try:
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+            except Exception as e:
+                print(f"Warning: Could not delete video file: {e}")
             
             # Update DB
             conn = sqlite3.connect(DB_FILE)
@@ -136,13 +322,24 @@ def upload_file():
             conn.commit()
             conn.close()
             
+            print("✓ PDF generation complete!", flush=True)
+            
             return jsonify({
                 'message': 'Processing complete',
                 'download_url': f'/download/{pdf_filename}'
             })
 
         except Exception as e:
-            print(f"Error processing job {job_id}: {e}")
+            print(f"Error processing job {job_id}: {e}", flush=True)
+            
+            # Cleanup on error
+            for temp_file in temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except:
+                    pass
+            
             conn = sqlite3.connect(DB_FILE)
             c = conn.cursor()
             c.execute("UPDATE jobs SET status = ? WHERE id = ?", ('failed', job_id))

@@ -5,3 +5,5 @@ moviepy
 fpdf
 gunicorn
 imageio_ffmpeg
+Pillow
+numpy
