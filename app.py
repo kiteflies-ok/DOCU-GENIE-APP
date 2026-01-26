@@ -21,7 +21,7 @@ class AuditorSkill:
     """
     Enterprise-grade auditor that validates SOP documents for:
     1. Safety compliance - checks for dangerous/bypass language
-    2. Structure compliance - ensures proper step formatting
+    2. Structure compliance - ensures proper step formatting (works with any language)
     3. Quality standards - validates professional formatting
     """
     
@@ -38,9 +38,9 @@ class AuditorSkill:
             'ignore error'
         ]
         
-        self.required_sections = [
-            'step 1', '1.', 'step-1'
-        ]
+        # BUG FIX 1: Updated to recognize generic numbering patterns (1., 2., 10.) 
+        # instead of language-specific "Step" keyword
+        self.step_pattern = re.compile(r'(\d+\.)', re.MULTILINE)
     
     def run_audit(self, text):
         """
@@ -58,12 +58,13 @@ class AuditorSkill:
                     'severity': 'HIGH'
                 }
         
-        # 2. Structure Check - Ensure numbered steps exist
-        has_steps = any(marker in text_lower for marker in self.required_sections)
-        if not has_steps:
+        # 2. Structure Check - Ensure numbered steps exist using regex
+        # Checks if there are at least a few numbered items (e.g. 1., 2.)
+        matches = self.step_pattern.findall(text)
+        if len(matches) < 2:  # Expecting at least 2 steps
             return {
                 'status': 'FAIL', 
-                'reason': 'Missing numbered steps (Step 1, 1., etc.)',
+                'reason': 'Missing numbered steps structure (e.g., 1., 2.)',
                 'severity': 'MEDIUM'
             }
         
@@ -150,13 +151,15 @@ def humanize_transcript(raw_text, video_duration=0, target_language='English'):
     """
     Enterprise Writer Agent: Uses One-Shot Learning to generate professional SOPs.
     Supports multiple languages via target_language parameter.
-    Falls back to raw_text if API fails.
+    Includes fallback translation retry logic.
     """
+    client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
+    
+    # -------------------------------------------------------------
+    # ATTEMPT 1: Full SOP Generation
+    # -------------------------------------------------------------
     try:
         print(f"Step 2b: Writer Agent generating SOP in {target_language}...", flush=True)
-        
-        # Initialize client (uses HF_TOKEN from environment)
-        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
         
         # Calculate approximate timestamps based on video duration
         duration_info = ""
@@ -166,11 +169,9 @@ def humanize_transcript(raw_text, video_duration=0, target_language='English'):
             t3 = int(video_duration * 0.90)
             duration_info = f"\n\nVideo Duration: {int(video_duration)} seconds. Reference timestamps: {t1}s, {t2}s, {t3}s."
         
-        # Generate SOP ID based on current date
         sop_id = datetime.datetime.now().strftime("SOP-%Y-%m%d-V1")
         current_date = datetime.datetime.now().strftime("%B %d, %Y")
         
-        # ONE-SHOT LEARNING PROMPT with language support
         prompt = f"""You are an expert Technical Writer specializing in Standard Operating Procedures (SOPs).
 
 Act as a Technical Writer. Rewrite the transcript into a professional SOP in {target_language}.
@@ -220,26 +221,53 @@ TRANSCRIPT:
 
 PROFESSIONAL SOP (in {target_language}):"""
 
-        # Call the model with increased tokens for detailed output
         messages = [{"role": "user", "content": prompt}]
         response = client.chat_completion(
             messages=messages,
             max_tokens=2048,
-            temperature=0.5
+            temperature=0.4, # Slightly lower temp for better format adherence
         )
         
         polished_text = response.choices[0].message.content.strip()
         
-        # Validate we got a reasonable response
+        # Validate response length
         if len(polished_text) > 100:
             print("✓ Writer Agent completed successfully!", flush=True)
             return polished_text
         else:
-            print("⚠ AI response too short, using raw text", flush=True)
-            return raw_text
-            
+            raise Exception("Response too short")
+
     except Exception as e:
-        print(f"⚠ Writer Agent failed: {e}", flush=True)
+        print(f"⚠ SOP Generation failed: {e}", flush=True)
+        
+        # -------------------------------------------------------------
+        # BUG FIX 2: FALLBACK TRANSLATION LOGIC
+        # If full SOP generation fails, at least provide a translation
+        # instead of returning raw English text.
+        # -------------------------------------------------------------
+        if target_language.lower() != 'english':
+            try:
+                print(f"→ Attempting simple translation fallback to {target_language}...", flush=True)
+                
+                fallback_prompt = f"Translate the following text to {target_language}. Maintain the original meaning exactly.\n\nTEXT:\n{raw_text}"
+                
+                messages = [{"role": "user", "content": fallback_prompt}]
+                response = client.chat_completion(
+                    messages=messages,
+                    max_tokens=2048,
+                    temperature=0.3
+                )
+                
+                translated_text = response.choices[0].message.content.strip()
+                if len(translated_text) > 50:
+                    print("✓ Fallback translation successful", flush=True)
+                    # Add a header so we know it's a raw translation
+                    return f"**NOTE: Automatic Translation (SOP Generation Failed)**\n\n{translated_text}"
+            
+            except Exception as trans_e:
+                print(f"⚠ Translation fallback failed: {trans_e}", flush=True)
+        
+        # Last resort: Return raw text
         print("→ Falling back to raw transcript", flush=True)
         return raw_text
 
@@ -566,6 +594,9 @@ def upload_file():
             
             # Content page
             pdf.add_page()
+            
+            # BUG FIX 3: Reset cursor to top margin after cover page
+            pdf.set_y(45)
             
             # Add warning banner if audit failed
             if audit_status != 'PASS':
