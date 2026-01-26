@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from moviepy import VideoFileClip
 import whisper
 from fpdf import FPDF
+from huggingface_hub import InferenceClient
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -69,6 +70,56 @@ try:
 except Exception as e:
     print(f"Error loading Whisper model: {e}")
     model = None
+
+
+# ============================================
+# AI HUMANIZER: Polish transcript with Mistral
+# ============================================
+def humanize_transcript(raw_text):
+    """
+    Use Mistral-7B to rewrite raw transcript into professional SOP format.
+    Falls back to raw_text if API fails.
+    """
+    try:
+        print("Step 2b: Humanizing transcript with AI...", flush=True)
+        
+        # Initialize client (uses HF_TOKEN from environment)
+        client = InferenceClient(model="mistralai/Mistral-7B-Instruct-v0.3")
+        
+        prompt = f"""Act as a Technical Writer. Rewrite the following raw transcript into a professional Standard Operating Procedure (SOP).
+
+- Remove filler words (um, ah, like).
+- Use 'Step 1, Step 2' format.
+- Use imperative verbs (e.g., 'Click the button' instead of 'You need to click').
+- Keep it concise.
+
+Raw Transcript:
+{raw_text}
+
+Professional SOP:"""
+
+        # Call the model
+        response = client.text_generation(
+            prompt,
+            max_new_tokens=1024,
+            temperature=0.7,
+            do_sample=True,
+        )
+        
+        polished_text = response.strip()
+        
+        # Validate we got a reasonable response
+        if len(polished_text) > 50:
+            print("✓ AI humanization successful!", flush=True)
+            return polished_text
+        else:
+            print("⚠ AI response too short, using raw text", flush=True)
+            return raw_text
+            
+    except Exception as e:
+        print(f"⚠ AI humanization failed: {e}", flush=True)
+        print("→ Falling back to raw transcript", flush=True)
+        return raw_text
 
 
 # ============================================
@@ -238,12 +289,17 @@ def upload_file():
             # =====================
             # STEP 2: Transcribe
             # =====================
-            print("Step 2: Transcribing...", flush=True)
+            print("Step 2: Transcribing with Whisper...", flush=True)
             if model is None:
                raise Exception("Whisper model not loaded")
             
             result = model.transcribe(audio_path)
-            transcript_text = result['text']
+            raw_text = result['text']
+            
+            # =====================
+            # STEP 2b: Humanize with AI
+            # =====================
+            polished_text = humanize_transcript(raw_text)
             
             # =====================
             # STEP 3: Extract Screenshots
@@ -290,9 +346,9 @@ def upload_file():
                     caption = f"Screenshot at {minutes}:{seconds:02d}"
                     pdf.add_screenshot(img_path, caption)
             
-            # Transcript section
-            pdf.add_section_header('Full Transcript')
-            pdf.add_transcript(transcript_text)
+            # Transcript section (using polished AI text)
+            pdf.add_section_header('Standard Operating Procedure')
+            pdf.add_transcript(polished_text)
             
             # Save PDF
             pdf.output(pdf_path)
