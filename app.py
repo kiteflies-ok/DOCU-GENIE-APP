@@ -211,16 +211,35 @@ class ContentPDF(FPDF):
             self.cell(50, 10, 'Content Pack', 0, 0, 'R')
             self.ln(15)
 
+    def sanitize_text(self, text):
+        if self.has_unicode:
+            return text
+        # If using Arial (Latin-1), replace common unicode chars
+        replacements = {
+            '\u2013': '-',   # en dash
+            '\u2014': '-',   # em dash
+            '\u2018': "'",   # left single quote
+            '\u2019': "'",   # right single quote
+            '\u201c': '"',   # left double quote
+            '\u201d': '"',   # right double quote
+            '\u2026': '...', # ellipsis
+            '\u00a0': ' ',   # non-breaking space
+        }
+        for char, rep in replacements.items():
+            text = text.replace(char, rep)
+        # Final safety: encode/decode to strip others
+        return text.encode('latin-1', 'replace').decode('latin-1')
+
     def chapter_title(self, title):
         self.set_font(self.main_font, '', 24)
         self.set_text_color(79, 70, 229) # Indigo
-        self.cell(0, 15, title, 0, 1, 'L')
+        self.cell(0, 15, self.sanitize_text(title), 0, 1, 'L')
         self.ln(5)
 
     def chapter_body(self, body):
         self.set_font(self.main_font, '', 11)
         self.set_text_color(50, 50, 50)
-        self.multi_cell(0, 7, body)
+        self.multi_cell(0, 7, self.sanitize_text(body))
         self.ln()
 
     def add_section_box(self, title, content):
@@ -228,10 +247,10 @@ class ContentPDF(FPDF):
         self.rect(10, self.get_y(), 190, 8, 'F')
         self.set_font(self.main_font, '', 12)
         self.set_text_color(0, 0, 0)
-        self.cell(0, 8, title, 0, 1, 'L', True)
+        self.cell(0, 8, self.sanitize_text(title), 0, 1, 'L', True)
         self.ln(2)
         self.set_font(self.main_font, '', 10)
-        self.multi_cell(0, 6, content)
+        self.multi_cell(0, 6, self.sanitize_text(content))
         self.ln(5)
 
 # ============================================
