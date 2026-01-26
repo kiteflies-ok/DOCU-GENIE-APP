@@ -153,7 +153,7 @@ def humanize_transcript(raw_text, video_duration=0, target_language='English'):
     Supports multiple languages via target_language parameter.
     Includes fallback translation retry logic.
     """
-    client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta")
+    client = InferenceClient(model="Qwen/Qwen2.5-72B-Instruct")
     
     # -------------------------------------------------------------
     # ATTEMPT 1: Full SOP Generation
@@ -173,6 +173,7 @@ def humanize_transcript(raw_text, video_duration=0, target_language='English'):
         current_date = datetime.datetime.now().strftime("%B %d, %Y")
         
         prompt = f"""You are an expert Technical Writer specializing in Standard Operating Procedures (SOPs).
+You are a professional translator and technical writer. If the user requests {target_language}, you MUST translate the output. Do not output English.
 
 Act as a Technical Writer. Rewrite the transcript into a professional SOP in {target_language}.
 
@@ -281,7 +282,7 @@ def answer_question(question, context):
     Uses Mistral-7B for accurate, context-grounded responses.
     """
     try:
-        client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta")
+        client = InferenceClient(model="Qwen/Qwen2.5-72B-Instruct")
         
         prompt = f"""You are a helpful assistant that answers questions about Standard Operating Procedures.
 Answer the following question using ONLY the information provided in the context below.
