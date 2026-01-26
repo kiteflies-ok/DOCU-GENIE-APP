@@ -38,9 +38,8 @@ class AuditorSkill:
             'ignore error'
         ]
         
-        # BUG FIX 1: Updated to recognize generic numbering patterns (1., 2., 10.) 
-        # instead of language-specific "Step" keyword
-        self.step_pattern = re.compile(r'(\d+\.)', re.MULTILINE)
+        # BUG FIX 1: Recognize generic numbering patterns (1., 1:, 1), Step 1, चरण 1)
+        self.step_pattern = re.compile(r'(?:step|चरण)?\s*\d+[:\.\)]', re.MULTILINE | re.IGNORECASE)
     
     def run_audit(self, text):
         """
