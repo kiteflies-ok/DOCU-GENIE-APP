@@ -311,16 +311,29 @@ class ContentPDF(FPDF):
         self.ln(5)
 
 def download_from_url(url):
-    """Downloads video from URL using yt-dlp. Returns (job_id, video_path, filename)."""
+    """Downloads video from URL using yt-dlp with anti-blocking features."""
     job_id = str(uuid.uuid4())
     
     # Configure yt-dlp to download video (for screenshots)
+    # Using 'best[ext=mp4]' to ensure video track exists for MoviePy
+    # Added user-agent spoofing to avoid 403 errors
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_%(title)s.%(ext)s"),
         'quiet': True,
         'no_warnings': True,
-        'restrictfilenames': True
+        'restrictfilenames': True,
+        'nocheckcertificate': True,
+        # SPOOFING: Pretend to be Android YouTube App / Browser
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
     }
     
     try:
@@ -332,11 +345,16 @@ def download_from_url(url):
             return job_id, video_path, filename
     except Exception as e:
         print(f"Download Error: {e}")
-        raise e
+        # Re-raise to be caught by the route handler and sent as JSON 400
+        raise Exception(f"URL Download Failed: {str(e)}. Please upload file manually.")
 
 # ============================================
 # ROUTES
 # ============================================
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'active', 'message': 'I am awake!'}), 200
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -373,7 +391,6 @@ def upload_file():
         temp_files = []
         auditor = AuditorSkill()
         
-        # 1. Audio & Transcribe
         # 1. Audio & Transcribe
         print("Step 1: Extract/Transcribe...", flush=True)
         audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")
@@ -490,10 +507,6 @@ def upload_file():
                 
                 try:
                     pdf.image(shot, x=x, y=y, w=img_w, h=img_h)
-                    # Add timestamp label?
-                    # pdf.set_xy(x, y + img_h + 1)
-                    # pdf.set_font('Arial', '', 8)
-                    # pdf.cell(img_w, 5, f"Cue {row*3 + col + 1}", 0, 0, 'C')
                 except Exception as e:
                     print(f"Error PDF image: {e}")
                     
