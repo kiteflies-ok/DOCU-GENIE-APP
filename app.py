@@ -147,7 +147,7 @@ You are a professional translator and content strategist.
 If the user requests {target_language}, you MUST translate the output. Do not output English unless requested.
 
 Rewrite the transcript in a {style} tone.
-Structure the output exactly into these 3 sections:
+Structure the output exactly into these 4 sections:
 
 SECTION 1: EXECUTIVE SUMMARY
 Title: (Catchy title)
@@ -164,6 +164,17 @@ SECTION 3: SOCIAL MEDIA PACK
 LinkedIn: (Professional post with hashtags)
 Twitter: (3-tweet thread)
 YouTube: (SEO description)
+
+SECTION 4: STRATEGIC INTELLIGENCE (THE INNOVATION LAYER)
+
+VISUAL FLOWCHART:
+(Create a vertical ASCII art flowchart representing the logic/steps in the video. Use boxes like [ Step ] and arrows like 'v' or '|').
+
+THE GAP ANALYSIS:
+(Identify 1 critical thing the speaker missed or a potential risk they didn't mention).
+
+KNOWLEDGE CHECK:
+(3 multiple-choice questions to test the reader's understanding. Put the answers upside down or at the very bottom).
 
 ---
 CONTEXT:
@@ -244,7 +255,43 @@ class ContentPDF(FPDF):
     def chapter_body(self, body):
         self.set_font(self.main_font, '', 11)
         self.set_text_color(50, 50, 50)
-        self.multi_cell(0, 7, self.sanitize_text(body))
+        
+        # Check for ASCII Flowchart to switch to Monospace
+        if "VISUAL FLOWCHART" in body:
+            parts = body.split("VISUAL FLOWCHART:")
+            # Print pre-flowchart text
+            self.multi_cell(0, 7, self.sanitize_text(parts[0]))
+            
+            if len(parts) > 1:
+                self.ln(5)
+                self.set_font("Courier", '', 10) # Monospace for ASCII
+                self.set_text_color(0, 0, 0)
+                self.cell(0, 10, "VISUAL FLOWCHART:", 0, 1)
+                
+                # Flowchart content - handle potential sticking with next section
+                flowchart_content = parts[1]
+                
+                # If Gap Analysis starts here, split it back
+                remainder = ""
+                if "THE GAP ANALYSIS:" in flowchart_content:
+                    fc_parts = flowchart_content.split("THE GAP ANALYSIS:")
+                    flowchart_content = fc_parts[0]
+                    remainder = "THE GAP ANALYSIS:" + fc_parts[1]
+                elif "KNOWLEDGE CHECK:" in flowchart_content:
+                    fc_parts = flowchart_content.split("KNOWLEDGE CHECK:")
+                    flowchart_content = fc_parts[0]
+                    remainder = "KNOWLEDGE CHECK:" + fc_parts[1]
+                    
+                self.multi_cell(0, 5, self.sanitize_text(flowchart_content))
+                
+                # Switch back to main font for the rest
+                if remainder:
+                    self.ln(5)
+                    self.set_font(self.main_font, '', 11)
+                    self.set_text_color(50, 50, 50)
+                    self.multi_cell(0, 7, self.sanitize_text(remainder))
+        else:
+            self.multi_cell(0, 7, self.sanitize_text(body))
         self.ln()
 
     def add_section_box(self, title, content):
@@ -302,21 +349,20 @@ def upload_file():
         result = model.transcribe(audio_path, fp16=False)
         raw_text = result['text']
         
-        # 2. Extract Screenshots (Dynamic Count)
+        # 2. Extract Screenshots (Every 10 seconds)
         screenshots = []
         cues = []
-        # Generate N screenshots. Handle count=1 separately.
-        if screenshot_count <= 1:
-            fractions = [0.5]
-        else:
-            # Linear spacing between 0.1 and 0.9
-            start_pct = 0.1
-            end_pct = 0.9
-            fractions = [start_pct + i * (end_pct - start_pct) / (screenshot_count - 1) for i in range(screenshot_count)]
+        
+        # Calculate timestamps every 10 seconds
+        duration_int = int(video_duration)
+        timestamps = list(range(10, duration_int, 10))
+        
+        # If video is shorter than 10s, take one at midpoint
+        if not timestamps and duration_int > 0:
+            timestamps = [duration_int // 2]
             
-        for i, pct in enumerate(fractions):
-            ts = video_duration * pct
-            out_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{i}.jpg")
+        for ts in timestamps:
+            out_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_frame_{ts}.jpg")
             try:
                 clip.save_frame(out_path, t=ts)
                 screenshots.append(out_path)
@@ -326,6 +372,12 @@ def upload_file():
                 print(f"Frame extraction failed at {ts}s: {e}")
             
         clip.close()
+        
+        # Save Raw Transcript
+        transcript_filename = f"{job_id}_transcript.txt"
+        transcript_path = os.path.join(app.config['OUTPUT_FOLDER'], transcript_filename)
+        with open(transcript_path, 'w', encoding='utf-8') as f:
+            f.write(raw_text)
 
         # 3. Generate Content
         print("Step 2: AI Generation...", flush=True)
@@ -340,7 +392,8 @@ def upload_file():
         sections = {
             'SECTION 1': '',
             'SECTION 2': '',
-            'SECTION 3': ''
+            'SECTION 3': '',
+            'SECTION 4': ''
         }
         
         current_sec = None
@@ -348,6 +401,7 @@ def upload_file():
             if 'SECTION 1:' in line.upper(): current_sec = 'SECTION 1'; continue
             if 'SECTION 2:' in line.upper(): current_sec = 'SECTION 2'; continue
             if 'SECTION 3:' in line.upper(): current_sec = 'SECTION 3'; continue
+            if 'SECTION 4:' in line.upper(): current_sec = 'SECTION 4'; continue
             
             if current_sec:
                 sections[current_sec] += line + "\n"
@@ -417,10 +471,12 @@ def upload_file():
         pdf.chapter_title("Social Media Pack")
         pdf.chapter_body(sections['SECTION 3'])
         
-        generated_filename = f"{job_id}_transcript.txt"
-        with open(os.path.join(app.config['OUTPUT_FOLDER'], generated_filename), 'w', encoding='utf-8') as f:
-            f.write(raw_text)
-
+        # PAGE 4: Strategic Intelligence
+        if sections['SECTION 4'].strip():
+            pdf.add_page()
+            pdf.chapter_title("Strategic Intelligence")
+            pdf.chapter_body(sections['SECTION 4'])
+        
         output_filename = f"{job_id}.pdf"
         pdf.output(os.path.join(app.config['OUTPUT_FOLDER'], output_filename))
 
@@ -432,7 +488,7 @@ def upload_file():
         return jsonify({
             'message': 'Success',
             'download_url': f'/download/{output_filename}',
-            'transcript_url': f'/download/{generated_filename}',
+            'download_transcript_url': f'/download/{transcript_filename}',
             'transcript_text': generated_text, # Sending FULL generated text for Chatbot context
             'audit_status': audit['status']
         })

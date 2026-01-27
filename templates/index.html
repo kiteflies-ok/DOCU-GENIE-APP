@@ -190,14 +190,14 @@
                         </svg>
                         Download PDF Report
                     </a>
-                    <a id="download-transcript" href="#"
-                        class="w-full bg-indigo-900/50 text-indigo-200 font-bold py-3 rounded-xl hover:bg-indigo-900/80 transition-colors flex items-center justify-center gap-2 border border-indigo-500/30">
+                    <a id="download-transcript-link" href="#"
+                        class="w-full bg-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/20 transition-colors flex items-center justify-center gap-2 border border-white/10">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                             </path>
                         </svg>
-                        Download Script (TXT)
+                        Download Transcript (TXT)
                     </a>
                     <button id="show-chat-btn"
                         class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors">
@@ -265,6 +265,7 @@
         const success = document.getElementById('success');
         const errorDiv = document.getElementById('error');
         const downloadLink = document.getElementById('download-link');
+        const downloadTranscriptLink = document.getElementById('download-transcript-link');
 
         // Chat UI
         const chatSection = document.getElementById('chat-section');
@@ -321,15 +322,14 @@
                 // State: Success
                 loading.classList.add('hidden');
                 success.classList.remove('hidden');
+                loading.classList.add('hidden');
+                success.classList.remove('hidden');
                 downloadLink.href = data.download_url;
-
-                // Add Transcript Link
-                const transcriptBtn = document.getElementById('download-transcript');
-                if (data.transcript_url) {
-                    transcriptBtn.href = data.transcript_url;
-                    transcriptBtn.classList.remove('hidden');
+                if (data.download_transcript_url) {
+                    downloadTranscriptLink.href = data.download_transcript_url;
+                    downloadTranscriptLink.classList.remove('hidden');
                 } else {
-                    transcriptBtn.classList.add('hidden');
+                    downloadTranscriptLink.classList.add('hidden');
                 }
 
                 // Store context for chat
