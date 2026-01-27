@@ -142,39 +142,56 @@ def generate_content_pack(raw_text, video_duration=0, target_language='English',
         cues_str = ", ".join([f"{int(c)}s" for c in cues]) if cues else "None"
         duration_info = f"Video Length: {int(video_duration)}s. Cues available at: {cues_str}."
 
-    prompt = f"""Act as a Lead Content Producer. 
-You are a professional translator and content strategist. 
+    prompt = f"""Act as a Universal Content Analyst and Creative Director. 
+You are an expert at decoding any type of video—whether it's a complex coding tutorial, a music video, a casual vlog, or a business meeting.
+
 If the user requests {target_language}, you MUST translate the output. Do not output English unless requested.
 
+STEP 1: ANALYZE THE GENRE
+Classify the transcript into one of these categories:
+- [MUSIC]: Song lyrics, abstract poetry, or music video.
+- [EDUCATION]: Tutorials, 'How-To' guides, lectures, documentaries.
+- [STORY]: Vlogs, travel diaries, personal stories, entertainment.
+- [BUSINESS]: Meetings, calls, updates, financial reports.
+
+STEP 2: GENERATE THE CONTENT PACK
 Rewrite the transcript in a {style} tone.
-Structure the output exactly into these 4 sections:
+Structure the output exactly into these 4 sections using the '###' delimiter for machine parsing:
 
-SECTION 1: EXECUTIVE SUMMARY
-Title: (Catchy title)
-The Hook: (1 sentence)
-Key Takeaways: (3 bullet points)
+### SECTION 1: THE SNAPSHOT
+**Category:** [Music / Education / Story / Business]
+**Title:** (Creative title adapted to the genre)
+**The Hook:** (1 sentence capturing the vibe or value)
+**Featured Quote:** (The most memorable line or lyric from the transcript)
+**Key Takeaways:** (3 bullet points - For Songs, list 'Core Themes'; For Tutorials, list 'Learning Points'; For Business, list 'Decisions')
 
-SECTION 2: VIDEO SCRIPT
-[00:00] INTRO: (Speaker text)
-[Visual Cue]: (Screen instruction)
-[00:30] BODY: (Main content)
-[END] OUTRO: (Call to action)
+### SECTION 2: THE CORE CONTENT
+(ADAPT THIS SECTION TO THE GENRE):
+- **IF MUSIC:** Provide 'LYRIC BREAKDOWN & MEANING'. Explain the story/emotion behind the song.
+- **IF EDUCATION:** Provide 'STEP-BY-STEP SCRIPT'. Use timestamps [00:00].
+- **IF STORY/VLOG:** Provide 'NARRATIVE ARC'. Break it down into Beginning, Climax, and Resolution.
+- **IF BUSINESS:** Provide 'MEETING MINUTES & ACTION ITEMS'.
 
-SECTION 3: SOCIAL MEDIA PACK
-LinkedIn: (Professional post with hashtags)
-Twitter: (3-tweet thread)
-YouTube: (SEO description)
+### SECTION 3: SOCIAL MEDIA PACK
+**LinkedIn:** (Professional post suited to the genre)
+**Twitter:** (Thread suited to the genre - e.g., Fan thread for music, Tips for education)
+**YouTube:** (SEO-optimized description with keywords)
 
-SECTION 4: STRATEGIC INTELLIGENCE (THE INNOVATION LAYER)
+### SECTION 4: STRATEGIC INTELLIGENCE
+(ADAPT THIS SECTION TO THE GENRE):
+**1. VISUALIZATION:**
+- If Music/Story: Create a 'MOOD BOARD' description (Colors, Vibes, Aesthetics).
+- If Education/Business: Create an ASCII FLOWCHART of the logic/process.
 
-VISUAL FLOWCHART:
-(Create a vertical ASCII art flowchart representing the logic/steps in the video. Use boxes like [ Step ] and arrows like 'v' or '|').
+**2. DEEP DIVE:**
+- If Music: 'HIDDEN MEANINGS' (Analyze metaphors).
+- If Education: 'GAP ANALYSIS' (What was missed?).
+- If Business: 'RISK ASSESSMENT'.
 
-THE GAP ANALYSIS:
-(Identify 1 critical thing the speaker missed or a potential risk they didn't mention).
-
-KNOWLEDGE CHECK:
-(3 multiple-choice questions to test the reader's understanding. Put the answers upside down or at the very bottom).
+**3. INTERACTIVE ELEMENT:**
+- If Music: 'TRIVIA QUESTION' about the artist/lyrics.
+- If Education: 'KNOWLEDGE CHECK' (Quiz).
+- If Business: 'DISCUSSION PROMPT'.
 
 ---
 CONTEXT:
@@ -257,41 +274,27 @@ class ContentPDF(FPDF):
         self.set_text_color(50, 50, 50)
         
         # Check for ASCII Flowchart to switch to Monospace
-        if "VISUAL FLOWCHART" in body:
-            parts = body.split("VISUAL FLOWCHART:")
-            # Print pre-flowchart text
-            self.multi_cell(0, 7, self.sanitize_text(parts[0]))
-            
-            if len(parts) > 1:
-                self.ln(5)
-                self.set_font("Courier", '', 10) # Monospace for ASCII
-                self.set_text_color(0, 0, 0)
-                self.cell(0, 10, "VISUAL FLOWCHART:", 0, 1)
-                
-                # Flowchart content - handle potential sticking with next section
-                flowchart_content = parts[1]
-                
-                # If Gap Analysis starts here, split it back
-                remainder = ""
-                if "THE GAP ANALYSIS:" in flowchart_content:
-                    fc_parts = flowchart_content.split("THE GAP ANALYSIS:")
-                    flowchart_content = fc_parts[0]
-                    remainder = "THE GAP ANALYSIS:" + fc_parts[1]
-                elif "KNOWLEDGE CHECK:" in flowchart_content:
-                    fc_parts = flowchart_content.split("KNOWLEDGE CHECK:")
-                    flowchart_content = fc_parts[0]
-                    remainder = "KNOWLEDGE CHECK:" + fc_parts[1]
-                    
-                self.multi_cell(0, 5, self.sanitize_text(flowchart_content))
-                
-                # Switch back to main font for the rest
-                if remainder:
-                    self.ln(5)
-                    self.set_font(self.main_font, '', 11)
-                    self.set_text_color(50, 50, 50)
-                    self.multi_cell(0, 7, self.sanitize_text(remainder))
+        # New prompt uses "ASCII FLOWCHART" explicitly in instructions
+        if "ASCII FLOWCHART" in body.upper() or "VISUAL FLOWCHART" in body.upper():
+             # Logic to find where the chart starts/ends
+             # We'll try to split by known headers or just print as is if we can't find clear boundaries
+             # Simplification: If we detect it, we might just print the whole section in Monospace? 
+             # No, that looks bad. Let's try to identify the block.
+             
+             # Heuristic: split by "2. DEEP DIVE" or similar headers from the new prompt
+             parts = re.split(r'(2\.\s+DEEP\s+DIVE|THE\s+GAP\s+ANALYSIS|HIDDEN\s+MEANINGS)', body)
+             
+             # The flowchart is likely in parts[0]
+             self.set_font("Courier", '', 10) # Monospace
+             self.multi_cell(0, 7, self.sanitize_text(parts[0]))
+             
+             # Print the rest in normal font
+             if len(parts) > 1:
+                 self.set_font(self.main_font, '', 11)
+                 remainder = "".join(parts[1:])
+                 self.multi_cell(0, 7, self.sanitize_text(remainder))
         else:
-            self.multi_cell(0, 7, self.sanitize_text(body))
+             self.multi_cell(0, 7, self.sanitize_text(body))
         self.ln()
 
     def add_section_box(self, title, content):
@@ -416,7 +419,7 @@ def upload_file():
         
         # PAGE 1: Executive Summary
         pdf.add_page()
-        pdf.chapter_title("Executive Summary")
+        pdf.chapter_title("The Snapshot")
         if audit['status'] != 'PASS':
             pdf.set_text_color(255, 0, 0)
             pdf.cell(0, 10, pdf.sanitize_text(f"NOTE: {audit['reason']}"), 0, 1)
@@ -424,7 +427,7 @@ def upload_file():
         
         # PAGE 2: Video Script
         pdf.add_page()
-        pdf.chapter_title("Video Script")
+        pdf.chapter_title("The Core Content")
         # Note: Screenshots moved to dedicated Storyboard page
         pdf.chapter_body(sections['SECTION 2'])
         
