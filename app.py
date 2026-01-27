@@ -13,6 +13,7 @@ from moviepy import VideoFileClip
 import whisper
 from fpdf import FPDF
 from huggingface_hub import InferenceClient
+import yt_dlp
 
 # ============================================
 # AUDITOR SKILL: Structure Validator
@@ -306,7 +307,32 @@ class ContentPDF(FPDF):
         self.ln(2)
         self.set_font(self.main_font, '', 10)
         self.multi_cell(0, 6, self.sanitize_text(content))
+        self.multi_cell(0, 6, self.sanitize_text(content))
         self.ln(5)
+
+def download_from_url(url):
+    """Downloads video from URL using yt-dlp. Returns (job_id, video_path, filename)."""
+    job_id = str(uuid.uuid4())
+    
+    # Configure yt-dlp to download video (for screenshots)
+    ydl_opts = {
+        'format': 'best[ext=mp4]/best',
+        'outtmpl': os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_%(title)s.%(ext)s"),
+        'quiet': True,
+        'no_warnings': True,
+        'restrictfilenames': True
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            print(f"Downloading from URL: {url}...", flush=True)
+            info = ydl.extract_info(url, download=True)
+            video_path = ydl.prepare_filename(info)
+            filename = os.path.basename(video_path)
+            return job_id, video_path, filename
+    except Exception as e:
+        print(f"Download Error: {e}")
+        raise e
 
 # ============================================
 # ROUTES
@@ -317,29 +343,37 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video'}), 400
+    # Check if URL provided
+    video_url = request.form.get('video_url')
+    file = request.files.get('video')
     
-    file = request.files['video']
+    if not video_url and not file:
+        return jsonify({'error': 'No video file or URL provided'}), 400
+    
     target_language = request.form.get('language', 'English')
     style = request.form.get('style', 'Professional (Corporate)')
     screenshot_count = int(request.form.get('screenshot_count', 3))
     
-    job_id = str(uuid.uuid4())
-    filename = secure_filename(file.filename)
-    video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_{filename}")
-    file.save(video_path)
-    
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("INSERT INTO jobs (id, filename, status) VALUES (?, ?, ?)", (job_id, filename, 'processing'))
-    conn.commit()
-    conn.close()
-
-    temp_files = []
-    auditor = AuditorSkill()
-    
     try:
+        if video_url:
+            job_id, video_path, filename = download_from_url(video_url)
+        else:
+            job_id = str(uuid.uuid4())
+            filename = secure_filename(file.filename)
+            video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}_{filename}")
+            file.save(video_path)
+            
+        # Common Logic
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT INTO jobs (id, filename, status) VALUES (?, ?, ?)", (job_id, filename, 'processing'))
+        conn.commit()
+        conn.close()
+
+        temp_files = []
+        auditor = AuditorSkill()
+        
+        # 1. Audio & Transcribe
         # 1. Audio & Transcribe
         print("Step 1: Extract/Transcribe...", flush=True)
         audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{job_id}.wav")

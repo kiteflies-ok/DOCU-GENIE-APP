@@ -141,27 +141,49 @@
                 <!-- Hidden Language Input (Force English) -->
                 <input type="hidden" name="language" value="English">
 
-                <!-- Drop Zone -->
-                <div id="drop-zone" class="upload-zone rounded-2xl p-8 cursor-pointer text-center relative">
-                    <input type="file" id="video-input" name="video" class="hidden" accept="video/*" required>
+                <!-- Input Method Tabs -->
+                <div class="flex gap-4 mb-2">
+                    <button type="button" id="tab-file"
+                        class="flex-1 py-2 text-sm font-bold text-white border-b-2 border-indigo-500 transition-colors">
+                        Upload File
+                    </button>
+                    <button type="button" id="tab-link"
+                        class="flex-1 py-2 text-sm font-bold text-white/40 border-b-2 border-transparent hover:text-white transition-colors">
+                        Paste Link
+                    </button>
+                </div>
 
-                    <div id="upload-prompt">
-                        <div
-                            class="w-14 h-14 mx-auto mb-3 rounded-full bg-indigo-500/10 flex items-center justify-center">
-                            <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
-                                </path>
-                            </svg>
+                <!-- FILE INPUT SECTION -->
+                <div id="file-input-section">
+                    <div id="drop-zone" class="upload-zone rounded-2xl p-8 cursor-pointer text-center relative">
+                        <input type="file" id="video-input" name="video" class="hidden" accept="video/*">
+
+                        <div id="upload-prompt">
+                            <div
+                                class="w-14 h-14 mx-auto mb-3 rounded-full bg-indigo-500/10 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                                    </path>
+                                </svg>
+                            </div>
+                            <p class="text-indigo-200 font-medium">Click to upload video</p>
+                            <p class="text-xs text-white/30 mt-1">MP4, MOV, AVI (Max 1GB)</p>
                         </div>
-                        <p class="text-indigo-200 font-medium">Click to upload video</p>
-                        <p class="text-xs text-white/30 mt-1">MP4, MOV, AVI (Max 1GB)</p>
-                    </div>
 
-                    <div id="file-selected" class="hidden">
-                        <p id="filename" class="text-white font-medium truncate"></p>
-                        <p class="text-xs text-green-400 mt-1">Ready to process</p>
+                        <div id="file-selected" class="hidden">
+                            <p id="filename" class="text-white font-medium truncate"></p>
+                            <p class="text-xs text-green-400 mt-1">Ready to process</p>
+                        </div>
                     </div>
+                </div>
+
+                <!-- LINK INPUT SECTION -->
+                <div id="link-input-section" class="hidden">
+                    <input type="url" name="video_url" id="video-url-input"
+                        class="w-full bg-black/30 border border-white/10 rounded-2xl px-6 py-8 text-center text-white placeholder-white/30 focus:outline-none focus:border-indigo-500 transition-all shadow-[0_0_15px_rgba(99,102,241,0.1)] text-lg"
+                        placeholder="Paste YouTube, TikTok, or Reels URL here...">
                 </div>
 
                 <button type="submit" id="submit-btn"
@@ -258,6 +280,13 @@
         const dropZone = document.getElementById('drop-zone');
         const videoInput = document.getElementById('video-input');
         const fileSelected = document.getElementById('file-selected');
+
+        // Tab References
+        const tabFile = document.getElementById('tab-file');
+        const tabLink = document.getElementById('tab-link');
+        const fileSection = document.getElementById('file-input-section');
+        const linkSection = document.getElementById('link-input-section');
+        const urlInput = document.getElementById('video-url-input');
         const uploadPrompt = document.getElementById('upload-prompt');
         const filenameLabel = document.getElementById('filename');
         const form = document.getElementById('uploadForm');
@@ -297,10 +326,29 @@
             }
         }
 
+        // Tabs Logic
+        tabFile.addEventListener('click', () => {
+            tabFile.className = "flex-1 py-2 text-sm font-bold text-white border-b-2 border-indigo-500 transition-colors";
+            tabLink.className = "flex-1 py-2 text-sm font-bold text-white/40 border-b-2 border-transparent hover:text-white transition-colors";
+            fileSection.classList.remove('hidden');
+            linkSection.classList.add('hidden');
+            urlInput.value = ''; // Clear URL
+        });
+
+        tabLink.addEventListener('click', () => {
+            tabLink.className = "flex-1 py-2 text-sm font-bold text-white border-b-2 border-indigo-500 transition-colors";
+            tabFile.className = "flex-1 py-2 text-sm font-bold text-white/40 border-b-2 border-transparent hover:text-white transition-colors";
+            linkSection.classList.remove('hidden');
+            fileSection.classList.add('hidden');
+            videoInput.value = ''; // Clear file
+            fileSelected.classList.add('hidden');
+            uploadPrompt.classList.remove('hidden');
+        });
+
         // Upload
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!videoInput.files.length) return;
+            if (!videoInput.files.length && !urlInput.value) return;
 
             // State: Loading
             form.classList.add('hidden');
