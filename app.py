@@ -371,6 +371,7 @@ def download_from_url(url):
         'no_warnings': True,
         'restrictfilenames': True,
         'nocheckcertificate': True,
+        'force_ipv4': True,  # FORCE IPv4 to fix DNS issues in container
         # SPOOFING: Pretend to be Android YouTube App / Browser
         'extractor_args': {
             'youtube': {
