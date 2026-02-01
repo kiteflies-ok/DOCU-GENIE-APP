@@ -1,12 +1,3 @@
----
-title: Docu-Genie
-emoji: 🧞
-colorFrom: purple
-colorTo: blue
-sdk: docker
-pinned: false
----
-
 # 🧞 Docu-Genie
 
 **Transform videos into professional documents using AI.**
@@ -17,7 +8,7 @@ Upload any video tutorial, training session, or walkthrough — and Docu-Genie w
 
 1. **Transcribes** your video using OpenAI Whisper (supports 90+ languages)
 2. **Humanizes** the transcript with Mistral AI — converting raw speech into professional "Step 1, Step 2" format
-3. **Captures screenshots** at key moments (10%, 50%, 90% of video)
+3. **Captures screenshots** at key moments 
 4. **Generates a PDF** with cover page, headers, footers, and styled sections
 
 ## ✨ Features
